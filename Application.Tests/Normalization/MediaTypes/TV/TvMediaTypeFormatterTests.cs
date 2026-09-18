@@ -36,6 +36,9 @@ public sealed class TvMediaTypeFormatterTests
         Assert.Equal(expectedPath, fileResult.DestinationFilePath);
         Assert.Contains(expectedPath, fileManager.Files, StringComparer.OrdinalIgnoreCase);
         Assert.Single(imdbClient.EpisodeRequests);
+        Assert.Equal(
+            [Path.Combine(rootPath, "The Bear")],
+            fileManager.DeletedDirectories);
     }
 
     [Fact]
@@ -158,6 +161,8 @@ public sealed class TvMediaTypeFormatterTests
 
         public List<(string Source, string Destination)> Moves { get; } = [];
 
+        public List<string> DeletedDirectories { get; } = [];
+
         public string[] FindMediaFiles(string directoryPath) => [];
 
         public string? TryReadTextFile(string filePath) => null;
@@ -175,7 +180,11 @@ public sealed class TvMediaTypeFormatterTests
             Moves.Add((sourceFilePath, destinationFilePath));
         }
 
-        public bool TryDeleteEmptyDirectory(string directoryPath) => false;
+        public bool TryDeleteEmptyDirectory(string directoryPath)
+        {
+            DeletedDirectories.Add(directoryPath);
+            return true;
+        }
     }
 
     private sealed class FakeImdbClient : IImdbClient

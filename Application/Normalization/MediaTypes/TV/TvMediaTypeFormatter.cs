@@ -12,6 +12,9 @@ namespace Application.Normalization.MediaTypes.TV;
 internal sealed class TvMediaTypeFormatter
 {
     private static readonly Regex YearExpression = new(@"\b(?:18|19|20)\d{2}\b", RegexOptions.CultureInvariant);
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
 
     private readonly IFileManager fileManager;
     private readonly IImdbClient imdbClient;
@@ -44,7 +47,7 @@ internal sealed class TvMediaTypeFormatter
         ArgumentNullException.ThrowIfNull(identificationResult);
 
         var results = new List<TvMediaFileFormattingResult>();
-        var directoriesToClean = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var directoriesToClean = new HashSet<string>(PathComparer);
 
         foreach (var identification in identificationResult.ShowIdentifications
             .Concat(identificationResult.LooseFileIdentifications))
@@ -277,7 +280,7 @@ internal sealed class TvMediaTypeFormatter
     }
 
     private static bool PathsEqual(string left, string right) =>
-        string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
+        PathComparer.Equals(Path.GetFullPath(left), Path.GetFullPath(right));
 
     private static void AddSourceDirectoriesToClean(
         ISet<string> directoriesToClean,
