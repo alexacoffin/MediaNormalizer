@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/1. Domain/">
+    <Project Path="Domain/Domain.csproj" Id="4e9e5692-204b-454d-aa68-d903401e1d57" />
+  </Folder>
+  <Folder Name="/2. Application/">
+    <Project Path="Application/Application.csproj" Id="6f255684-c747-4cec-aed3-cc34445b9e76" />
+  </Folder>
+  <Folder Name="/3. Business/">
+    <Project Path="Business/Business.csproj" Id="96e4064e-7bf1-45eb-b02a-0638bbe00449" />
+  </Folder>
+  <Folder Name="/4. Infrastructure/">
+    <Project Path="Infrastructure/Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/5. Host/">
+    <Project Path="Host/Host.csproj" />
+  </Folder>
+  <Folder Name="/6. Tests/">
+    <Project Path="Application.Tests/Application.Tests.csproj" />
+  </Folder>
+</Solution>
