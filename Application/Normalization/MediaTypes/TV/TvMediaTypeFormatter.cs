@@ -86,7 +86,11 @@ internal sealed class TvMediaTypeFormatter
 
                 if (result.Status == TvMediaTypeFormattingStatus.Renamed)
                 {
-                    AddSourceDirectoriesToClean(directoriesToClean, tvRootPath, filePath);
+                    AddSourceDirectoriesToClean(
+                        directoriesToClean,
+                        tvRootPath,
+                        filePath,
+                        outputDirectory);
                 }
             }
         }
@@ -285,14 +289,18 @@ internal sealed class TvMediaTypeFormatter
     private static void AddSourceDirectoriesToClean(
         ISet<string> directoriesToClean,
         string tvRootPath,
-        string sourceFilePath)
+        string sourceFilePath,
+        string outputDirectory)
     {
         var rootPath = Path.GetFullPath(tvRootPath);
+        var outputRootPath = Path.GetFullPath(outputDirectory);
         var directoryPath = Path.GetDirectoryName(Path.GetFullPath(sourceFilePath));
 
         while (!string.IsNullOrWhiteSpace(directoryPath) && !PathsEqual(directoryPath, rootPath))
         {
-            if (!IsChildOf(directoryPath, rootPath))
+            if (!IsChildOf(directoryPath, rootPath)
+                || PathsEqual(directoryPath, outputRootPath)
+                || IsChildOf(directoryPath, outputRootPath))
             {
                 return;
             }

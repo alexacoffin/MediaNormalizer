@@ -131,6 +131,21 @@ public sealed class TvMediaTypeFormatterTests
         Assert.Empty(fileManager.Moves);
     }
 
+    [Fact]
+    public async Task FormatAsync_DoesNotCleanOutputDirectoriesNestedUnderIntakeRoot()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "Library");
+        var outputRoot = Path.Combine(rootPath, "FormattedTV");
+        var sourcePath = Path.Combine(outputRoot, "The Bear", "The.Bear.S01E02.mkv");
+        var fileManager = new FakeFileManager([sourcePath]);
+        var formatter = new TvMediaTypeFormatter(fileManager, new FakeImdbClient(), outputRoot);
+
+        var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
+
+        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Empty(fileManager.DeletedDirectories);
+    }
+
     private static TvIdentificationRunResult CreateIdentificationResult(
         string rootPath,
         string sourcePath,
