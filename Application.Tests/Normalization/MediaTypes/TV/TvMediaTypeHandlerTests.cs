@@ -2,6 +2,7 @@ using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
 using Application.Normalization.MediaTypes.TV;
+using Moq;
 using Xunit;
 
 namespace Application.Tests.Normalization.MediaTypes.TV;
@@ -13,113 +14,50 @@ public sealed class TvMediaTypeHandlerTests
     {
         var libraryRoot = Path.Combine(Path.GetTempPath(), "Library");
         var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
-        var firstEpisode = Path.Combine(libraryRoot, "The Bear", "Season 01", "The.Bear.S01E01.mkv");
-        var secondEpisode = Path.Combine(libraryRoot, "The Bear", "Season 02", "The.Bear.S02E01.mkv");
-        var fileManager = new FakeFileManager
-        {
-            FilesByDirectory = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-            {
-                [libraryRoot] = [firstEpisode, secondEpisode]
-            }
-        };
-        var imdbClient = new FakeImdbClient
-        {
-            SearchResponse = ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
-                [new ImdbTitleSummary("tt14452776", "The Bear", "2022", ImdbTitleType.Series)],
+        var firstEpisode = Path.Combine(libraryRoot, "Bob's Burgers", "Season 01", "Bob's.Burgers.S01E01.mkv");
+        var secondEpisode = Path.Combine(libraryRoot, "Bob's Burgers", "Season 02", "Bob's.Burgers.S02E01.mkv");
+        var scannedDirectories = new List<string>();
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(It.IsAny<string>()))
+            .Callback<string>(directory => scannedDirectories.Add(directory))
+            .Returns((string directory) => directory == libraryRoot
+                ? [firstEpisode, secondEpisode]
+                : []);
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Bob's Burgers",
+                null,
+                Application.Abstractions.Imdb.Models.ImdbTitleType.Series,
                 1,
-                1))
-        };
-        var handler = new TvMediaTypeHandler([libraryRoot], outputRoot, fileManager, imdbClient);
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
+                [new ImdbTitleSummary("tt14452776", "Bob's Burgers", "2022", ImdbTitleType.Series)],
+                1,
+                1)));
+        imdbClient
+            .Setup(client => client.GetEpisodeAsync(
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Failure(
+                new ImdbError(ImdbErrorKind.NotFound, "Not found.")));
+        var handler = new TvMediaTypeHandler([libraryRoot], outputRoot, fileManager.Object, imdbClient.Object);
 
         var formattingResult = await handler.NormalizeAsync();
 
-        Assert.Equal([libraryRoot], fileManager.ScannedDirectories);
+        Assert.Equal([libraryRoot], scannedDirectories);
         Assert.Equal(2, formattingResult.RenamedCount);
         Assert.All(
             formattingResult.FileResults,
             result => Assert.StartsWith(outputRoot, result.DestinationFilePath!, StringComparison.OrdinalIgnoreCase));
-        var search = Assert.Single(imdbClient.Searches);
-        Assert.Equal("The Bear", search.Title);
-        Assert.Equal(ImdbTitleType.Series, search.Type);
-    }
-
-    private sealed class FakeFileManager : IFileManager
-    {
-        public Dictionary<string, string[]> FilesByDirectory { get; init; } = [];
-
-        public List<string> ScannedDirectories { get; } = [];
-
-        public string[] FindMediaFiles(string directoryPath)
-        {
-            ScannedDirectories.Add(directoryPath);
-            return FilesByDirectory.TryGetValue(directoryPath, out var filePaths)
-                ? filePaths
-                : [];
-        }
-
-        public string? TryReadTextFile(string filePath) => null;
-
-        public bool FileExists(string filePath) => false;
-
-        public void EnsureDirectory(string directoryPath)
-        {
-        }
-
-        public void MoveFile(string sourceFilePath, string destinationFilePath)
-        {
-        }
-
-        public bool TryDeleteEmptyDirectory(string directoryPath) => false;
-    }
-
-    private sealed class FakeImdbClient : IImdbClient
-    {
-        public ImdbResult<ImdbSearchPage> SearchResponse { get; init; } =
-            ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage([], 0, 1));
-
-        public List<SearchRequest> Searches { get; } = [];
-
-        public Task<ImdbResult<ImdbSearchPage>> SearchAsync(
-            string title,
-            int? year = null,
-            ImdbTitleType? type = null,
-            int page = 1,
-            CancellationToken cancellationToken = default)
-        {
-            Searches.Add(new SearchRequest(title, year, type, page));
-            return Task.FromResult(SearchResponse);
-        }
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetByIdAsync(
-            string imdbId,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetEpisodeAsync(
-            string seriesImdbId,
-            int seasonNumber,
-            int episodeNumber,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(ImdbResult<ImdbTitleDetails>.Failure(
-                new ImdbError(ImdbErrorKind.NotFound, "Not found.")));
-    }
-
-    private sealed class SearchRequest
-    {
-        public SearchRequest(string title, int? year, ImdbTitleType? type, int page)
-        {
-            Title = title;
-            Year = year;
-            Type = type;
-            Page = page;
-        }
-
-        public string Title { get; }
-
-        public int? Year { get; }
-
-        public ImdbTitleType? Type { get; }
-
-        public int Page { get; }
+        imdbClient.Verify(client => client.SearchAsync(
+            "Bob's Burgers",
+            null,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }

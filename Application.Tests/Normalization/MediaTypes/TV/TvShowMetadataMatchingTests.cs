@@ -1,9 +1,10 @@
+using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
 using Application.Normalization.MediaTypes.TV;
 using Application.Normalization.MediaTypes.TV.Internals;
 using Application.Normalization.MediaTypes.TV.Internals.Enums;
-using Application.Tests.TestDoubles;
+using Moq;
 using Xunit;
 
 namespace Application.Tests.Normalization.MediaTypes.TV;
@@ -13,17 +14,17 @@ public sealed class TvShowMetadataMatchingTests
     [Fact]
     public async Task IdentifyAsync_MatchesASeriesUsingTheNfoImdbId()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            DetailsResponse = ImdbResult<ImdbTitleDetails>.Success(new ImdbTitleDetails(
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.GetByIdAsync("tt14452776", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Success(new ImdbTitleDetails(
                 "tt14452776",
-                "The Bear",
+                "Bob's Burgers",
                 "2022",
                 ImdbTitleType.Series,
                 null,
                 null,
-                null))
-        };
+                null)));
         var helper = CreateHelper(
             "<tvshow><uniqueid type=\"imdb\">tt14452776</uniqueid></tvshow>",
             imdbClient);
@@ -34,25 +35,32 @@ public sealed class TvShowMetadataMatchingTests
         var attempt = Assert.Single(identification.Attempts);
         Assert.Equal(TvShowEvidenceSource.MetadataImdbId, attempt.EvidenceSource);
         Assert.Equal("tt14452776", attempt.MatchedSeries?.ImdbId);
-        Assert.Equal(["tt14452776"], imdbClient.DetailRequests);
-        Assert.Empty(imdbClient.SearchRequests);
+        imdbClient.Verify(client => client.GetByIdAsync("tt14452776", It.IsAny<CancellationToken>()), Times.Once);
+        imdbClient.VerifyNoOtherCalls();
     }
 
     [Fact]
     public async Task IdentifyAsync_FallsFromANotFoundNfoIdToNfoTitleAndPremieredYear()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            DetailsResponse = ImdbResult<ImdbTitleDetails>.Failure(new ImdbError(
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.GetByIdAsync("tt0000000", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Failure(new ImdbError(
                 ImdbErrorKind.NotFound,
-                "Movie not found!")),
-            SearchResponse = ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
-                [new ImdbTitleSummary("tt14452776", "The Bear", "2022", ImdbTitleType.Series)],
+                "Movie not found!")));
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Bob's Burgers",
+                2022,
+                ImdbTitleType.Series,
                 1,
-                1))
-        };
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
+                [new ImdbTitleSummary("tt14452776", "Bob's Burgers", "2022", ImdbTitleType.Series)],
+                1,
+                1)));
         var helper = CreateHelper(
-            "<tvshow><imdbid>tt0000000</imdbid><title>The Bear</title><premiered>2022-06-23</premiered></tvshow>",
+            "<tvshow><imdbid>tt0000000</imdbid><title>Bob's Burgers</title><premiered>2022-06-23</premiered></tvshow>",
             imdbClient);
 
         var identification = await IdentifyAsync(helper, "Wrong Folder Name");
@@ -62,37 +70,55 @@ public sealed class TvShowMetadataMatchingTests
         Assert.Equal(TvShowEvidenceSource.MetadataImdbId, identification.Attempts[0].EvidenceSource);
         Assert.Equal(TvShowIdentificationStatus.NoExactMatch, identification.Attempts[0].Status);
         Assert.Equal(TvShowEvidenceSource.MetadataTitle, identification.FinalAttempt.EvidenceSource);
-        var search = Assert.Single(imdbClient.SearchRequests);
-        Assert.Equal("The Bear", search.Title);
-        Assert.Equal(2022, search.Year);
+        imdbClient.Verify(client => client.GetByIdAsync("tt0000000", It.IsAny<CancellationToken>()), Times.Once);
+        imdbClient.Verify(client => client.SearchAsync(
+            "Bob's Burgers",
+            2022,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task IdentifyAsync_FallsFromMalformedNfoToFolderTitle()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            SearchResponse = ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
-                [new ImdbTitleSummary("tt14452776", "The Bear", "2022", ImdbTitleType.Series)],
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Bob's Burgers",
+                null,
+                ImdbTitleType.Series,
                 1,
-                1))
-        };
-        var helper = CreateHelper("<tvshow><title>The Bear</title>", imdbClient);
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
+                [new ImdbTitleSummary("tt14452776", "Bob's Burgers", "2022", ImdbTitleType.Series)],
+                1,
+                1)));
+        var helper = CreateHelper("<tvshow><title>Bob's Burgers</title>", imdbClient);
 
-        var identification = await IdentifyAsync(helper, "The Bear");
+        var identification = await IdentifyAsync(helper, "Bob's Burgers");
 
         Assert.Equal(TvShowIdentificationStatus.Matched, identification.Status);
         var attempt = Assert.Single(identification.Attempts);
         Assert.Equal(TvShowEvidenceSource.FolderName, attempt.EvidenceSource);
-        Assert.Equal("The Bear", Assert.Single(imdbClient.SearchRequests).Title);
+        imdbClient.Verify(client => client.SearchAsync(
+            "Bob's Burgers",
+            null,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     private static TvIdentificationHelper CreateHelper(
         string nfoContent,
-        FakeImdbClient imdbClient) =>
-        new(
-            new StubFileManager { TextFileReader = _ => nfoContent },
-            imdbClient);
+        Mock<IImdbClient> imdbClient)
+    {
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.TryReadTextFile(It.IsAny<string>()))
+            .Returns(nfoContent);
+        return new TvIdentificationHelper(fileManager.Object, imdbClient.Object);
+    }
 
     private static async Task<TvShowIdentification> IdentifyAsync(
         TvIdentificationHelper helper,
@@ -108,64 +134,5 @@ public sealed class TvShowMetadataMatchingTests
         var result = await helper.IdentifyAsync(new TvShowFolderGroupingResult([group], []));
 
         return Assert.Single(result.ShowIdentifications);
-    }
-
-    private sealed class FakeImdbClient : IImdbClient
-    {
-        public ImdbResult<ImdbTitleDetails> DetailsResponse { get; init; } =
-            ImdbResult<ImdbTitleDetails>.Failure(new ImdbError(ImdbErrorKind.NotFound, "Not found."));
-
-        public ImdbResult<ImdbSearchPage> SearchResponse { get; init; } =
-            ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage([], 0, 1));
-
-        public List<string> DetailRequests { get; } = [];
-
-        public List<SearchRequest> SearchRequests { get; } = [];
-
-        public Task<ImdbResult<ImdbSearchPage>> SearchAsync(
-            string title,
-            int? year = null,
-            ImdbTitleType? type = null,
-            int page = 1,
-            CancellationToken cancellationToken = default)
-        {
-            SearchRequests.Add(new SearchRequest(title, year, type, page));
-            return Task.FromResult(SearchResponse);
-        }
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetByIdAsync(
-            string imdbId,
-            CancellationToken cancellationToken = default)
-        {
-            DetailRequests.Add(imdbId);
-            return Task.FromResult(DetailsResponse);
-        }
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetEpisodeAsync(
-            string seriesImdbId,
-            int seasonNumber,
-            int episodeNumber,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(ImdbResult<ImdbTitleDetails>.Failure(
-                new ImdbError(ImdbErrorKind.NotFound, "Not found.")));
-    }
-
-    private sealed class SearchRequest
-    {
-        public SearchRequest(string title, int? year, ImdbTitleType? type, int page)
-        {
-            Title = title;
-            Year = year;
-            Type = type;
-            Page = page;
-        }
-
-        public string Title { get; }
-
-        public int? Year { get; }
-
-        public ImdbTitleType? Type { get; }
-
-        public int Page { get; }
     }
 }

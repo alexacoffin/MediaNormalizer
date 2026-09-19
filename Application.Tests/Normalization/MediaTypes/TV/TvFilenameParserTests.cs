@@ -6,12 +6,12 @@ namespace Application.Tests.Normalization.MediaTypes.TV;
 public sealed class TvFilenameParserTests
 {
     [Theory]
-    [InlineData("The.Bear.S02E03.1080p.WEB-DL.x265.mkv", "The Bear")]
-    [InlineData("The_Bear_2x03_1080p_WEBRip.mkv", "The Bear")]
-    [InlineData("The.Bear.2024-06-26.1080p.HDTV.mkv", "The Bear")]
-    [InlineData("The Bear - 003 [1080p].mkv", "The Bear")]
-    [InlineData("The Bear Season 2 Episode 3 WEB-DL.mkv", "The Bear")]
-    [InlineData("The Bear Episode 12 720p.mkv", "The Bear")]
+    [InlineData("Bob's.Burgers.S02E03.1080p.WEB-DL.x265.mkv", "Bob's Burgers")]
+    [InlineData("Bob's_Burgers_2x03_1080p_WEBRip.mkv", "Bob's Burgers")]
+    [InlineData("Bob's.Burgers.2024-06-26.1080p.HDTV.mkv", "Bob's Burgers")]
+    [InlineData("Bob's Burgers - 003 [1080p].mkv", "Bob's Burgers")]
+    [InlineData("Bob's Burgers Season 2 Episode 3 WEB-DL.mkv", "Bob's Burgers")]
+    [InlineData("Bob's Burgers Episode 12 720p.mkv", "Bob's Burgers")]
     public void TryParse_ExtractsTitlesFromSupportedEpisodeConventions(
         string fileName,
         string expectedTitle)
@@ -24,7 +24,7 @@ public sealed class TvFilenameParserTests
     [Fact]
     public void TryParse_ReturnsNullWhenNoEpisodeConventionIsPresent()
     {
-        var candidate = TvFilenameParser.TryParse("The.Bear.1080p.WEB-DL.mkv");
+        var candidate = TvFilenameParser.TryParse("Bob's.Burgers.1080p.WEB-DL.mkv");
 
         Assert.Null(candidate);
     }
@@ -32,7 +32,7 @@ public sealed class TvFilenameParserTests
     [Fact]
     public void TryParse_ExtractsSeasonAndEpisodeNumbers()
     {
-        var candidate = TvFilenameParser.TryParse("The.Bear.S02E03.mkv");
+        var candidate = TvFilenameParser.TryParse("Bob's.Burgers.S02E03.mkv");
 
         Assert.Equal(2, candidate?.SeasonNumber);
         Assert.Equal(3, candidate?.EpisodeNumber);
@@ -50,7 +50,7 @@ public sealed class TvFilenameParserTests
     [Fact]
     public void TryParse_IdentifiesMultiEpisodeFiles()
     {
-        var candidate = TvFilenameParser.TryParse("The.Bear.S01E01E02.mkv");
+        var candidate = TvFilenameParser.TryParse("Bob's.Burgers.S01E01E02.mkv");
 
         Assert.True(candidate?.IsMultiEpisode);
     }

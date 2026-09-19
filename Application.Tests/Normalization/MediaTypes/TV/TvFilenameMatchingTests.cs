@@ -1,9 +1,10 @@
+using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
 using Application.Normalization.MediaTypes.TV;
 using Application.Normalization.MediaTypes.TV.Internals;
 using Application.Normalization.MediaTypes.TV.Internals.Enums;
-using Application.Tests.TestDoubles;
+using Moq;
 using Xunit;
 
 namespace Application.Tests.Normalization.MediaTypes.TV;
@@ -13,17 +14,23 @@ public sealed class TvFilenameMatchingTests
     [Fact]
     public async Task IdentifyAsync_FallsFromFolderNoMatchToAConsensusFilenameMatch()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            SearchHandler = request => request.Title == "Wrong Folder"
-                ? EmptySearch()
-                : SeriesSearch("The Bear")
-        };
-        var helper = new TvIdentificationHelper(new StubFileManager(), imdbClient);
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<ImdbTitleType?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((string title, int? year, ImdbTitleType? type, int page, CancellationToken cancellationToken) =>
+                Task.FromResult(title == "Wrong Folder"
+                    ? EmptySearch()
+                    : SeriesSearch("Bob's Burgers")));
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
         var group = ShowFolder(
             "Wrong Folder",
-            "The.Bear.S01E01.1080p.WEB-DL.mkv",
-            "The.Bear.S01E02.1080p.WEB-DL.mkv");
+            "Bob's.Burgers.S01E01.1080p.WEB-DL.mkv",
+            "Bob's.Burgers.S01E02.1080p.WEB-DL.mkv");
 
         var identification = Assert.Single((await helper.IdentifyAsync(
             new TvShowFolderGroupingResult([group], []))).ShowIdentifications);
@@ -33,22 +40,28 @@ public sealed class TvFilenameMatchingTests
         Assert.Equal(TvShowEvidenceSource.FolderName, identification.Attempts[0].EvidenceSource);
         Assert.Equal(TvShowIdentificationStatus.NoExactMatch, identification.Attempts[0].Status);
         Assert.Equal(TvShowEvidenceSource.Filename, identification.FinalAttempt.EvidenceSource);
-        Assert.Equal("The Bear", identification.FinalAttempt.CandidateTitle);
+        Assert.Equal("Bob's Burgers", identification.FinalAttempt.CandidateTitle);
     }
 
     [Fact]
     public async Task IdentifyAsync_FallsFromAnOmdbNotFoundToAConsensusFilenameMatch()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            SearchHandler = request => request.Title == "Wrong Folder"
-                ? ImdbResult<ImdbSearchPage>.Failure(new ImdbError(
-                    ImdbErrorKind.NotFound,
-                    "Series not found."))
-                : SeriesSearch("The Bear")
-        };
-        var helper = new TvIdentificationHelper(new StubFileManager(), imdbClient);
-        var group = ShowFolder("Wrong Folder", "The.Bear.S01E01.mkv");
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<ImdbTitleType?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((string title, int? year, ImdbTitleType? type, int page, CancellationToken cancellationToken) =>
+                Task.FromResult(title == "Wrong Folder"
+                    ? ImdbResult<ImdbSearchPage>.Failure(new ImdbError(
+                        ImdbErrorKind.NotFound,
+                        "Series not found."))
+                    : SeriesSearch("Bob's Burgers")));
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
+        var group = ShowFolder("Wrong Folder", "Bob's.Burgers.S01E01.mkv");
 
         var identification = Assert.Single((await helper.IdentifyAsync(
             new TvShowFolderGroupingResult([group], []))).ShowIdentifications);
@@ -61,14 +74,19 @@ public sealed class TvFilenameMatchingTests
     [Fact]
     public async Task IdentifyAsync_DoesNotFallThroughAfterATerminalOmdbFailure()
     {
-        var imdbClient = new FakeImdbClient
-        {
-            SearchHandler = _ => ImdbResult<ImdbSearchPage>.Failure(new ImdbError(
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<ImdbTitleType?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Failure(new ImdbError(
                 ImdbErrorKind.RateLimit,
-                "Request limit reached."))
-        };
-        var helper = new TvIdentificationHelper(new StubFileManager(), imdbClient);
-        var group = ShowFolder("Wrong Folder", "The.Bear.S01E01.mkv");
+                "Request limit reached.")));
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
+        var group = ShowFolder("Wrong Folder", "Bob's.Burgers.S01E01.mkv");
 
         var identification = Assert.Single((await helper.IdentifyAsync(
             new TvShowFolderGroupingResult([group], []))).ShowIdentifications);
@@ -81,13 +99,19 @@ public sealed class TvFilenameMatchingTests
     [Fact]
     public async Task IdentifyAsync_LeavesAShowFolderUnresolvedWhenFilenameCandidatesConflict()
     {
-        var helper = new TvIdentificationHelper(new StubFileManager(), new FakeImdbClient
-        {
-            SearchHandler = _ => EmptySearch()
-        });
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<ImdbTitleType?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(EmptySearch());
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
         var group = ShowFolder(
             "Wrong Folder",
-            "The.Bear.S01E01.mkv",
+            "Bob's.Burgers.S01E01.mkv",
             "Severance.S01E01.mkv");
 
         var identification = Assert.Single((await helper.IdentifyAsync(
@@ -104,14 +128,21 @@ public sealed class TvFilenameMatchingTests
         var looseFiles = new TvUnsupportedFileGroup(
             tvRoot,
             [
-                Path.Combine(tvRoot, "The.Bear.S01E01.mkv"),
-                Path.Combine(tvRoot, "The.Bear.S01E02.mkv"),
+                Path.Combine(tvRoot, "Bob's.Burgers.S01E01.mkv"),
+                Path.Combine(tvRoot, "Bob's.Burgers.S01E02.mkv"),
                 Path.Combine(tvRoot, "Severance.S01E01.mkv")
             ]);
-        var helper = new TvIdentificationHelper(new StubFileManager(), new FakeImdbClient
-        {
-            SearchHandler = request => SeriesSearch(request.Title)
-        });
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                It.IsAny<string>(),
+                It.IsAny<int?>(),
+                It.IsAny<ImdbTitleType?>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns((string title, int? year, ImdbTitleType? type, int page, CancellationToken cancellationToken) =>
+                Task.FromResult(SeriesSearch(title)));
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
 
         var result = await helper.IdentifyAsync(
             new TvShowFolderGroupingResult([], [looseFiles]));
@@ -121,7 +152,7 @@ public sealed class TvFilenameMatchingTests
         Assert.All(result.LooseFileIdentifications, identification =>
             Assert.Equal(TvShowIdentificationStatus.Matched, identification.Status));
         Assert.Contains(result.LooseFileIdentifications, identification =>
-            identification.FinalAttempt.CandidateTitle == "The Bear"
+            identification.FinalAttempt.CandidateTitle == "Bob's Burgers"
             && identification.LooseFileGroup?.FilePaths.Length == 2);
         Assert.Contains(result.LooseFileIdentifications, identification =>
             identification.FinalAttempt.CandidateTitle == "Severance"
@@ -147,50 +178,4 @@ public sealed class TvFilenameMatchingTests
             [new ImdbTitleSummary($"tt{title.Length:D7}", title, "2022", ImdbTitleType.Series)],
             1,
             1));
-
-    private sealed class FakeImdbClient : IImdbClient
-    {
-        public Func<SearchRequest, ImdbResult<ImdbSearchPage>> SearchHandler { get; init; } =
-            _ => EmptySearch();
-
-        public Task<ImdbResult<ImdbSearchPage>> SearchAsync(
-            string title,
-            int? year = null,
-            ImdbTitleType? type = null,
-            int page = 1,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(SearchHandler(new SearchRequest(title, year, type, page)));
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetByIdAsync(
-            string imdbId,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task<ImdbResult<ImdbTitleDetails>> GetEpisodeAsync(
-            string seriesImdbId,
-            int seasonNumber,
-            int episodeNumber,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(ImdbResult<ImdbTitleDetails>.Failure(
-                new ImdbError(ImdbErrorKind.NotFound, "Not found.")));
-    }
-
-    private sealed class SearchRequest
-    {
-        public SearchRequest(string title, int? year, ImdbTitleType? type, int page)
-        {
-            Title = title;
-            Year = year;
-            Type = type;
-            Page = page;
-        }
-
-        public string Title { get; }
-
-        public int? Year { get; }
-
-        public ImdbTitleType? Type { get; }
-
-        public int Page { get; }
-    }
 }

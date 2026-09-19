@@ -10,7 +10,7 @@ public sealed class FileManagerTests
     public void TryReadTextFile_ReturnsContentsForAnExistingFile()
     {
         var filePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.nfo");
-        File.WriteAllText(filePath, "<tvshow><title>The Bear</title></tvshow>");
+        File.WriteAllText(filePath, "<tvshow><title>Bob's Burgers</title></tvshow>");
 
         try
         {
@@ -18,7 +18,7 @@ public sealed class FileManagerTests
 
             var content = fileManager.TryReadTextFile(filePath);
 
-            Assert.Equal("<tvshow><title>The Bear</title></tvshow>", content);
+            Assert.Equal("<tvshow><title>Bob's Burgers</title></tvshow>", content);
         }
         finally
         {
