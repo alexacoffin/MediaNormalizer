@@ -14,6 +14,11 @@ public sealed class MediaTypeHandler(
         MediaTypeNormalizationRequest mediaType,
         string[] locations)
     {
+        if (!mediaType.Enabled)
+        {
+            return;
+        }
+
         IMediaTypeHandler? handler = mediaType.Id switch
         {
             MediaType.Tv => new TvMediaTypeHandler(

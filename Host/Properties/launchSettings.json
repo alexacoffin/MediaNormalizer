@@ -6,14 +6,16 @@
       "dotnetRunMessages": true,
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
+        "MediaLibrary__Locations__0": "C:\\MediaNormalizer\\library",
         "MediaLibrary__MediaTypes__0__Id": "1",
         "MediaLibrary__MediaTypes__0__Name": "TV",
         "MediaLibrary__MediaTypes__0__Subdirectory": "TV",
-        "MediaLibrary__MediaTypes__0__Enabled": "false",
+        "MediaLibrary__MediaTypes__0__OutputDirectory": "C:\\MediaNormalizer\\normalized",
+        "MediaLibrary__MediaTypes__0__Enabled": "true",
         "MediaLibrary__MediaTypes__1__Id": "2",
         "MediaLibrary__MediaTypes__1__Name": "MOVIES",
         "MediaLibrary__MediaTypes__1__Subdirectory": "MOVIES",
-        "MediaLibrary__MediaTypes__1__Enabled": "true"
+        "MediaLibrary__MediaTypes__1__Enabled": "false"
       }
     }
   }
