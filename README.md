@@ -1,6 +1,6 @@
 # MediaNormalizer
 
-MediaNormalizer is deployed as a Dockerized ASP.NET Core Web API. Docker Compose is the canonical deployment workflow.
+MediaNormalizer is a .NET Core Web API application intended to run alongside a media server i.e. Plex or Jellyfin. It's used to move media files from an intake folder into destination folders (depending on media type), match them to a known entry on OMDB, and use the OMDB entry to rename files and directories into a format recognized by the chosen media server app. It's designed to be deployed via Docker Compose on a Linux container.
 
 ## Docker deployment
 
