@@ -1,17 +1,26 @@
+using Application.Normalization;
+
 namespace Application.Normalization.MediaTypes.TV;
 
 public sealed class TvMediaTypeFormattingResult
 {
-    public TvMediaTypeFormattingResult(TvMediaFileFormattingResult[] fileResults) =>
+    public TvMediaTypeFormattingResult(
+        TvMediaFileFormattingResult[] fileResults,
+        string[]? deletedDirectories = null)
+    {
         FileResults = fileResults;
+        DeletedDirectories = deletedDirectories ?? [];
+    }
 
     public TvMediaFileFormattingResult[] FileResults { get; }
 
-    public int RenamedCount => FileResults.Count(result => result.Status == TvMediaTypeFormattingStatus.Renamed);
+    public string[] DeletedDirectories { get; }
 
-    public int AlreadyNormalizedCount => FileResults.Count(result => result.Status == TvMediaTypeFormattingStatus.AlreadyNormalized);
+    public int RenamedCount => FileResults.Count(result => result.Status == MediaFileNormalizationStatus.Renamed);
 
-    public int SkippedCount => FileResults.Count(result => result.Status == TvMediaTypeFormattingStatus.Skipped);
+    public int AlreadyNormalizedCount => FileResults.Count(result => result.Status == MediaFileNormalizationStatus.AlreadyNormalized);
 
-    public int FailedCount => FileResults.Count(result => result.Status == TvMediaTypeFormattingStatus.Failed);
+    public int SkippedCount => FileResults.Count(result => result.Status == MediaFileNormalizationStatus.Skipped);
+
+    public int FailedCount => FileResults.Count(result => result.Status == MediaFileNormalizationStatus.Failed);
 }

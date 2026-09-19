@@ -1,3 +1,5 @@
+using Application.Normalization;
+
 namespace Application.Normalization.MediaTypes.Movies;
 
 public sealed class MovieMediaTypeHandler : IMediaTypeHandler
@@ -6,5 +8,6 @@ public sealed class MovieMediaTypeHandler : IMediaTypeHandler
     {
     }
 
-    public Task Normalize() => Task.CompletedTask;
+    public Task<MediaTypeNormalizationResult> Normalize() =>
+        Task.FromResult(MediaTypeNormalizationResult.Empty);
 }

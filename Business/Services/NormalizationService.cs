@@ -6,11 +6,18 @@ public sealed class NormalizationService(
     MediaLibraryNormalizationRequest mediaLibrary,
     MediaTypeHandler mediaTypeHandler) : INormalizationService
 {
-    public async Task NormalizeMediaFiles()
+    public async Task<NormalizationResult> NormalizeMediaFiles()
     {
+        var fileResults = new List<MediaFileNormalizationResult>();
+        var deletedDirectories = new List<string>();
+
         foreach (var mediaType in mediaLibrary.MediaTypes)
         {
-            await mediaTypeHandler.Process(mediaType, mediaLibrary.Locations);
+            var result = await mediaTypeHandler.Process(mediaType, mediaLibrary.Locations);
+            fileResults.AddRange(result.FileResults);
+            deletedDirectories.AddRange(result.DeletedDirectories);
         }
+
+        return new NormalizationResult(fileResults, deletedDirectories);
     }
 }

@@ -1,5 +1,6 @@
 using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
+using Application.Normalization;
 using Application.Normalization.MediaTypes.TV.Internals;
 
 namespace Application.Normalization.MediaTypes.TV;
@@ -27,7 +28,13 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     private readonly TvIdentificationHelper identificationHelper;
     private readonly TvMediaTypeFormatter formatter;
 
-    public async Task Normalize() => await NormalizeAsync();
+    public async Task<MediaTypeNormalizationResult> Normalize()
+    {
+        var formattingResult = await NormalizeAsync();
+        return new MediaTypeNormalizationResult(
+            formattingResult.FileResults.Select(MapResult),
+            formattingResult.DeletedDirectories);
+    }
 
     public async Task<TvMediaTypeFormattingResult> NormalizeAsync(
         CancellationToken cancellationToken = default)
@@ -47,4 +54,11 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
         identificationResult = await identificationHelper.IdentifyAsync(groupingResult, cancellationToken);
         return await formatter.FormatAsync(identificationResult, cancellationToken);
     }
+
+    private static MediaFileNormalizationResult MapResult(TvMediaFileFormattingResult result) =>
+        new(
+            result.SourceFilePath,
+            result.DestinationFilePath,
+            result.Status,
+            result.Message);
 }
