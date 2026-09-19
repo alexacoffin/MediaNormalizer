@@ -1,3 +1,4 @@
+using Application.Normalization;
 using Business.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,8 +9,7 @@ namespace Host.Controllers;
 public sealed class NormalizationController(INormalizationService normalizationService) : ControllerBase
 {
     [HttpPost]
-    public async Task<IActionResult> NormalizeMediaFiles()
-    {
-        return Ok(await normalizationService.NormalizeMediaFiles());
-    }
+    [ProducesResponseType(typeof(NormalizationResult), StatusCodes.Status200OK)]
+    public Task<NormalizationResult> NormalizeMediaFiles() =>
+        normalizationService.NormalizeMediaFiles();
 }
