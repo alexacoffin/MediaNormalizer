@@ -10,13 +10,13 @@ public sealed class MediaTypeHandler(
     IFileManager fileManager,
     IImdbClient imdbClient)
 {
-    public async Task Process(
+    public async Task<MediaTypeNormalizationResult> Process(
         MediaTypeNormalizationRequest mediaType,
         string[] locations)
     {
         if (!mediaType.Enabled)
         {
-            return;
+            return MediaTypeNormalizationResult.Empty;
         }
 
         IMediaTypeHandler? handler = mediaType.Id switch
@@ -30,9 +30,8 @@ public sealed class MediaTypeHandler(
             _ => null
         };
 
-        if (handler is not null)
-        {
-            await handler.Normalize();
-        }
+        return handler is null
+            ? MediaTypeNormalizationResult.Empty
+            : await handler.Normalize();
     }
 }

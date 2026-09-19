@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
+using Application.Normalization;
 using Application.Normalization.MediaTypes.TV.Internals;
 using Application.Normalization.MediaTypes.TV.Internals.Enums;
 
@@ -47,6 +48,7 @@ internal sealed class TvMediaTypeFormatter
         ArgumentNullException.ThrowIfNull(identificationResult);
 
         var results = new List<TvMediaFileFormattingResult>();
+        var deletedDirectories = new List<string>();
         var directoriesToClean = new HashSet<string>(PathComparer);
 
         foreach (var identification in identificationResult.ShowIdentifications
@@ -84,7 +86,7 @@ internal sealed class TvMediaTypeFormatter
                     cancellationToken);
                 results.Add(result);
 
-                if (result.Status == TvMediaTypeFormattingStatus.Renamed)
+                if (result.Status == MediaFileNormalizationStatus.Renamed)
                 {
                     AddSourceDirectoriesToClean(
                         directoriesToClean,
@@ -97,10 +99,13 @@ internal sealed class TvMediaTypeFormatter
 
         foreach (var directoryPath in directoriesToClean.OrderByDescending(path => path.Length))
         {
-            fileManager.TryDeleteEmptyDirectory(directoryPath);
+            if (fileManager.TryDeleteEmptyDirectory(directoryPath))
+            {
+                deletedDirectories.Add(directoryPath);
+            }
         }
 
-        return new TvMediaTypeFormattingResult(results.ToArray());
+        return new TvMediaTypeFormattingResult(results.ToArray(), deletedDirectories.ToArray());
     }
 
     private async Task<TvMediaFileFormattingResult> FormatFileAsync(
@@ -159,7 +164,7 @@ internal sealed class TvMediaTypeFormatter
             return new TvMediaFileFormattingResult(
                 sourceFilePath,
                 destinationFilePath,
-                TvMediaTypeFormattingStatus.AlreadyNormalized,
+                MediaFileNormalizationStatus.AlreadyNormalized,
                 "The file already has the canonical path and name.");
         }
 
@@ -168,7 +173,7 @@ internal sealed class TvMediaTypeFormatter
             return new TvMediaFileFormattingResult(
                 sourceFilePath,
                 destinationFilePath,
-                TvMediaTypeFormattingStatus.Skipped,
+                MediaFileNormalizationStatus.Skipped,
                 "The destination file already exists.");
         }
 
@@ -179,7 +184,7 @@ internal sealed class TvMediaTypeFormatter
             return new TvMediaFileFormattingResult(
                 sourceFilePath,
                 destinationFilePath,
-                TvMediaTypeFormattingStatus.Renamed,
+                MediaFileNormalizationStatus.Renamed,
                 message);
         }
         catch (UnauthorizedAccessException exception)
@@ -251,13 +256,13 @@ internal sealed class TvMediaTypeFormatter
     }
 
     private static TvMediaFileFormattingResult Skipped(string sourceFilePath, string message) =>
-        new(sourceFilePath, null, TvMediaTypeFormattingStatus.Skipped, message);
+        new(sourceFilePath, null, MediaFileNormalizationStatus.Skipped, message);
 
     private static TvMediaFileFormattingResult Failed(
         string sourceFilePath,
         string? destinationFilePath,
         string message) =>
-        new(sourceFilePath, destinationFilePath, TvMediaTypeFormattingStatus.Failed, message);
+        new(sourceFilePath, destinationFilePath, MediaFileNormalizationStatus.Failed, message);
 
     private static string? CreateSeriesName(ImdbTitleSummary matchedSeries)
     {

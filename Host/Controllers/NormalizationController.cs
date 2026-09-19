@@ -10,7 +10,6 @@ public sealed class NormalizationController(INormalizationService normalizationS
     [HttpPost]
     public async Task<IActionResult> NormalizeMediaFiles()
     {
-        await normalizationService.NormalizeMediaFiles();
-        return Ok(new { status = "completed" });
+        return Ok(await normalizationService.NormalizeMediaFiles());
     }
 }

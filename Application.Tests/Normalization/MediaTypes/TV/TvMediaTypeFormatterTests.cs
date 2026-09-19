@@ -1,6 +1,7 @@
 using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
+using Application.Normalization;
 using Application.Normalization.MediaTypes.TV;
 using Application.Normalization.MediaTypes.TV.Internals;
 using Application.Normalization.MediaTypes.TV.Internals.Enums;
@@ -31,7 +32,7 @@ public sealed class TvMediaTypeFormatterTests
             "Season 01",
             "Bob's Burgers (2022) - S01E02 - Hands.mkv");
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, fileResult.Status);
         Assert.Equal(expectedPath, fileResult.DestinationFilePath);
         Assert.Contains(expectedPath, fileManager.FilePaths, StringComparer.OrdinalIgnoreCase);
         Assert.Single(imdbClient.EpisodeRequests);
@@ -55,7 +56,7 @@ public sealed class TvMediaTypeFormatterTests
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, fileResult.Status);
         Assert.EndsWith("Bob's Burgers (2022) - S01E02.mkv", fileResult.DestinationFilePath);
     }
 
@@ -72,7 +73,7 @@ public sealed class TvMediaTypeFormatterTests
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath, "The Daily Show"));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, fileResult.Status);
         Assert.Equal(
             Path.Combine(outputRoot, "The Daily Show (2022)", "The Daily Show (2022) - 2024-06-26.mkv"),
             fileResult.DestinationFilePath);
@@ -94,7 +95,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.Moves);
     }
 
@@ -112,7 +113,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.Moves);
     }
 
@@ -138,7 +139,7 @@ public sealed class TvMediaTypeFormatterTests
             "Bob's Burgers"));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.AlreadyNormalized, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.AlreadyNormalized, fileResult.Status);
         Assert.Empty(fileManager.Moves);
     }
 
@@ -156,7 +157,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.DeletedDirectories);
     }
 
@@ -181,7 +182,7 @@ public sealed class TvMediaTypeFormatterTests
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Failed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Failed, fileResult.Status);
         Assert.Equal("Move failed.", fileResult.Message);
         Assert.Empty(fileManager.Moves);
         Assert.Contains(
@@ -207,7 +208,7 @@ public sealed class TvMediaTypeFormatterTests
             CreateIdentificationResult(rootPath, sourcePath, seriesTitle: "..."));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Failed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Failed, fileResult.Status);
         Assert.Null(fileResult.DestinationFilePath);
         Assert.Empty(fileManager.Moves);
         Assert.Empty(fileManager.EnsuredDirectories);
@@ -236,7 +237,7 @@ public sealed class TvMediaTypeFormatterTests
                 (TvShowIdentificationStatus)identificationStatus));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, fileResult.Status);
         Assert.Equal("The series was not matched with confidence.", fileResult.Message);
         Assert.Empty(fileManager.Moves);
         Assert.Empty(fileManager.EnsuredDirectories);
@@ -259,13 +260,36 @@ public sealed class TvMediaTypeFormatterTests
             CreateLooseIdentificationResult(rootPath, sourcePath));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, fileResult.Status);
         Assert.Contains("Bob's Burgers (2022) - S01E02.mkv", fileResult.DestinationFilePath);
         Assert.Single(fileManager.Moves);
         Assert.Single(fileManager.DeletedDirectories);
+        Assert.Single(result.DeletedDirectories);
         Assert.Equal(
             Path.Combine(rootPath, "Bob's Burgers"),
             fileManager.DeletedDirectories[0]);
+        Assert.Equal(
+            Path.Combine(rootPath, "Bob's Burgers"),
+            result.DeletedDirectories[0]);
+    }
+
+    [Fact]
+    public async Task FormatAsync_DoesNotReportDirectoriesThatWereNotDeleted()
+    {
+        var rootPath = Path.Combine(Path.GetTempPath(), "TV");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
+        var sourcePath = Path.Combine(rootPath, "Bob's Burgers", "Bob's.Burgers.S01E02.mkv");
+        var fileManager = CreateFileManager([sourcePath], deleteDirectoryResult: false);
+        var formatter = new TvMediaTypeFormatter(
+            fileManager.Mock.Object,
+            CreateImdbClient(null).Mock.Object,
+            outputRoot);
+
+        var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
+
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Empty(result.DeletedDirectories);
+        Assert.Single(fileManager.DeletedDirectories);
     }
 
     [Fact]
@@ -283,7 +307,7 @@ public sealed class TvMediaTypeFormatterTests
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, fileResult.Status);
         Assert.Equal("No supported episode marker was found.", fileResult.Message);
         Assert.Empty(fileManager.Moves);
         Assert.Empty(fileManager.EnsuredDirectories);
@@ -304,7 +328,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.DeletedDirectories);
     }
 
@@ -322,7 +346,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.DeletedDirectories);
     }
 
@@ -340,7 +364,7 @@ public sealed class TvMediaTypeFormatterTests
 
         var result = await formatter.FormatAsync(CreateIdentificationResult(rootPath, sourcePath));
 
-        Assert.Equal(TvMediaTypeFormattingStatus.Renamed, Assert.Single(result.FileResults).Status);
+        Assert.Equal(MediaFileNormalizationStatus.Renamed, Assert.Single(result.FileResults).Status);
         Assert.Empty(fileManager.DeletedDirectories);
     }
 
@@ -408,7 +432,8 @@ public sealed class TvMediaTypeFormatterTests
 
     private static FileManagerFixture CreateFileManager(
         IEnumerable<string> files,
-        Exception? moveException = null)
+        Exception? moveException = null,
+        bool deleteDirectoryResult = true)
     {
         var fixture = new FileManagerFixture(files);
         fixture.Mock
@@ -433,7 +458,7 @@ public sealed class TvMediaTypeFormatterTests
         fixture.Mock
             .Setup(manager => manager.TryDeleteEmptyDirectory(It.IsAny<string>()))
             .Callback<string>(directoryPath => fixture.DeletedDirectories.Add(directoryPath))
-            .Returns(true);
+            .Returns(deleteDirectoryResult);
 
         return fixture;
     }

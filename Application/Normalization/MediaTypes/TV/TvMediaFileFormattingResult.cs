@@ -1,3 +1,5 @@
+using Application.Normalization;
+
 namespace Application.Normalization.MediaTypes.TV;
 
 public sealed class TvMediaFileFormattingResult
@@ -5,7 +7,7 @@ public sealed class TvMediaFileFormattingResult
     public TvMediaFileFormattingResult(
         string sourceFilePath,
         string? destinationFilePath,
-        TvMediaTypeFormattingStatus status,
+        MediaFileNormalizationStatus status,
         string message)
     {
         SourceFilePath = sourceFilePath;
@@ -18,7 +20,7 @@ public sealed class TvMediaFileFormattingResult
 
     public string? DestinationFilePath { get; }
 
-    public TvMediaTypeFormattingStatus Status { get; }
+    public MediaFileNormalizationStatus Status { get; }
 
     public string Message { get; }
 }

@@ -1,3 +1,4 @@
+using Application.Normalization;
 using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Abstractions.Imdb.Models;
@@ -113,7 +114,7 @@ public sealed class TvMediaTypeHandlerTests
         var result = await handler.NormalizeAsync();
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, fileResult.Status);
         fileManager.Verify(manager => manager.MoveFile(
             It.IsAny<string>(),
             It.IsAny<string>()), Times.Never);
@@ -154,7 +155,7 @@ public sealed class TvMediaTypeHandlerTests
         var result = await handler.NormalizeAsync();
 
         var fileResult = Assert.Single(result.FileResults);
-        Assert.Equal(TvMediaTypeFormattingStatus.Skipped, fileResult.Status);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, fileResult.Status);
         fileManager.Verify(manager => manager.MoveFile(
             It.IsAny<string>(),
             It.IsAny<string>()), Times.Never);
