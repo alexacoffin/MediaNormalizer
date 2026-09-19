@@ -1,0 +1,14 @@
+.git
+.gitignore
+.vs
+.agents
+AGENTS.md
+docs/workflow
+Application.Tests
+**/bin
+**/obj
+**/TestResults
+*.user
+*.suo
+.env
+.env.*

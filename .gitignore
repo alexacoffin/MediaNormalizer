@@ -63,6 +63,12 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Local Docker deployment settings and bind-mounted media fixtures
+.env
+.env.*
+!.env.example
+/data/
+
 # Local Codex and agent workflow files
 AGENTS.md
 .agents/

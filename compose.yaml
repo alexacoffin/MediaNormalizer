@@ -1,0 +1,32 @@
+services:
+  media-normalizer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: media-normalizer:latest
+    restart: unless-stopped
+    ports:
+      - "${MEDIA_NORMALIZER_PORT:-18081}:18081"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "18081"
+      Omdb__ApiKey: "${OMDB_API_KEY:?Set OMDB_API_KEY in .env}"
+      MediaLibrary__Locations__0: /media/library
+      MediaLibrary__MediaTypes__0__Id: Tv
+      MediaLibrary__MediaTypes__0__Name: TV
+      MediaLibrary__MediaTypes__0__Subdirectory: TV
+      MediaLibrary__MediaTypes__0__OutputDirectory: /media/normalized
+      MediaLibrary__MediaTypes__0__Enabled: "${MEDIA_LIBRARY_TV_ENABLED:-false}"
+    volumes:
+      - type: bind
+        source: ${MEDIA_LIBRARY_PATH:?Set MEDIA_LIBRARY_PATH in .env}
+        target: /media/library
+      - type: bind
+        source: ${MEDIA_NORMALIZED_PATH:?Set MEDIA_NORMALIZED_PATH in .env}
+        target: /media/normalized
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:18081/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
