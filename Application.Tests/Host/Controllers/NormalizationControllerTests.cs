@@ -1,7 +1,6 @@
 using Application.Normalization;
 using Business.Services;
 using Host.Controllers;
-using Microsoft.AspNetCore.Mvc;
 using Moq;
 using System.Text.Json;
 using Xunit;
@@ -50,8 +49,7 @@ public sealed class NormalizationControllerTests
 
         var result = await controller.NormalizeMediaFiles();
 
-        var okResult = Assert.IsType<OkObjectResult>(result);
-        var response = Assert.IsType<NormalizationResult>(okResult.Value);
+        var response = Assert.IsType<NormalizationResult>(result);
         Assert.Equal("completed", response.Status);
         Assert.Equal(1, response.Renamed.Count);
         Assert.Equal([destinationPath], response.Renamed.Paths);

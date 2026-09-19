@@ -6,6 +6,7 @@ using Business.Services;
 using Host.Configuration;
 using Infrastructure.FileSystem;
 using Infrastructure.Imdb;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -63,10 +64,16 @@ builder.Logging.AddFilter(
 builder.Services.AddSingleton<IFileManager, FileManager>();
 builder.Services.AddTransient<MediaTypeHandler>();
 builder.Services.AddTransient<INormalizationService, NormalizationService>();
+builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
 var app = builder.Build();
 
+app.MapOpenApi();
+app.UseSwaggerUI(options =>
+{
+    options.SwaggerEndpoint("/openapi/v1.json", "MediaNormalizer API v1");
+});
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.MapControllers();
 
