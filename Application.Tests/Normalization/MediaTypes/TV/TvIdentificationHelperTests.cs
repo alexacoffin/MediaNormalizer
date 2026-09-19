@@ -2,6 +2,7 @@ using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Normalization.MediaTypes.TV;
 using Application.Normalization.MediaTypes.TV.Internals;
+using Application.Normalization.MediaTypes.TV.Internals.Enums;
 using Moq;
 using Xunit;
 
@@ -105,6 +106,80 @@ public sealed class TvIdentificationHelperTests
 
         Assert.Empty(result.ShowFolderGroups);
         Assert.Empty(result.UnsupportedFileGroups);
+    }
+
+    [Fact]
+    public void GroupByShowFolder_IgnoresNullEmptyRootRootLevelAndInvalidFiles()
+    {
+        var tvRoot = Path.Combine(Path.GetTempPath(), "TV");
+        var validFile = MediaFile(tvRoot, "Bob's Burgers", "Season 01", "Bob's.Burgers.S01E01.mkv");
+        var result = helper.GroupByShowFolder(
+        [
+            null!,
+            new TvMediaFile(" ", validFile.FilePath),
+            new TvMediaFile(tvRoot, " "),
+            new TvMediaFile(tvRoot, tvRoot),
+            new TvMediaFile(
+                tvRoot,
+                Path.Combine(Path.GetTempPath(), "Elsewhere", "Bob's.Burgers.S01E01.mkv")),
+            validFile
+        ]);
+
+        var group = Assert.Single(result.ShowFolderGroups);
+        Assert.Equal("Bob's Burgers", group.ShowFolderName);
+        Assert.Equal([validFile.FilePath], group.FilePaths);
+        Assert.Empty(result.UnsupportedFileGroups);
+    }
+
+    [Fact]
+    public void GroupByShowFolder_ThrowsForNullMediaFileCollection()
+    {
+        Assert.Throws<ArgumentNullException>(() => helper.GroupByShowFolder(null!));
+    }
+
+    [Fact]
+    public async Task IdentifyAsync_ReportsInvalidCandidateForWhitespaceFolderName()
+    {
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.TryReadTextFile(It.IsAny<string>()))
+            .Returns((string?)null);
+        var imdbClient = new Mock<IImdbClient>();
+        var helper = new TvIdentificationHelper(fileManager.Object, imdbClient.Object);
+        var tvRoot = Path.Combine(Path.GetTempPath(), "TV");
+        var showFolder = Path.Combine(tvRoot, " ");
+        var group = new TvShowFolderGroup(
+            tvRoot,
+            showFolder,
+            " ",
+            [Path.Combine(showFolder, "Episode.mkv")]);
+
+        var result = await helper.IdentifyAsync(new TvShowFolderGroupingResult([group], []));
+
+        var identification = Assert.Single(result.ShowIdentifications);
+        Assert.Equal(TvShowIdentificationStatus.InvalidCandidate, identification.Status);
+        Assert.Empty(identification.CandidateTitle);
+        imdbClient.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task IdentifyAsync_ReportsInvalidCandidateForUnrecognizedLooseFile()
+    {
+        var fileManager = new Mock<IFileManager>();
+        var imdbClient = new Mock<IImdbClient>();
+        var helper = new TvIdentificationHelper(fileManager.Object, imdbClient.Object);
+        var tvRoot = Path.Combine(Path.GetTempPath(), "TV");
+        var unsupportedGroup = new TvUnsupportedFileGroup(
+            tvRoot,
+            [Path.Combine(tvRoot, "README.txt")]);
+
+        var result = await helper.IdentifyAsync(
+            new TvShowFolderGroupingResult([], [unsupportedGroup]));
+
+        var identification = Assert.Single(result.LooseFileIdentifications);
+        Assert.Equal(TvShowIdentificationStatus.InvalidCandidate, identification.Status);
+        Assert.Empty(identification.CandidateTitle);
+        imdbClient.VerifyNoOtherCalls();
     }
 
     private static TvMediaFile MediaFile(string tvRoot, params string[] relativeSegments) =>

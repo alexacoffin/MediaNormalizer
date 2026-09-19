@@ -109,6 +109,71 @@ public sealed class TvShowMetadataMatchingTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task IdentifyAsync_MarksMetadataIdAsNoExactMatchWhenResultIsNotSeries()
+    {
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.GetByIdAsync("tt0000001", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Success(new ImdbTitleDetails(
+                "tt0000001",
+                "Bob's Burgers Movie",
+                "2022",
+                ImdbTitleType.Movie,
+                null,
+                null,
+                null)));
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Wrong Folder Name",
+                null,
+                ImdbTitleType.Series,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage([], 0, 1)));
+        var helper = CreateHelper(
+            "<tvshow><imdbid>tt0000001</imdbid></tvshow>",
+            imdbClient);
+
+        var identification = await IdentifyAsync(helper, "Wrong Folder Name");
+
+        Assert.Equal(TvShowIdentificationStatus.NoExactMatch, identification.Status);
+        Assert.Equal(2, identification.Attempts.Length);
+        Assert.Equal(TvShowEvidenceSource.MetadataImdbId, identification.Attempts[0].EvidenceSource);
+        Assert.Equal(TvShowIdentificationStatus.NoExactMatch, identification.Attempts[0].Status);
+        Assert.Equal(TvShowEvidenceSource.FolderName, identification.FinalAttempt.EvidenceSource);
+        Assert.Null(identification.MatchedSeries);
+        imdbClient.Verify(client => client.GetByIdAsync("tt0000001", It.IsAny<CancellationToken>()), Times.Once);
+        imdbClient.Verify(client => client.SearchAsync(
+            "Wrong Folder Name",
+            null,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task IdentifyAsync_StopsOnMetadataIdLookupFailure()
+    {
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.GetByIdAsync("tt0000002", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Failure(new ImdbError(
+                ImdbErrorKind.RateLimit,
+                "Request limit reached.")));
+        var helper = CreateHelper(
+            "<tvshow><imdbid>tt0000002</imdbid><title>Bob's Burgers</title></tvshow>",
+            imdbClient);
+
+        var identification = await IdentifyAsync(helper, "Wrong Folder Name");
+
+        Assert.Equal(TvShowIdentificationStatus.LookupFailed, identification.Status);
+        Assert.Equal(ImdbErrorKind.RateLimit, identification.LookupError?.Kind);
+        Assert.Single(identification.Attempts);
+        imdbClient.Verify(client => client.GetByIdAsync("tt0000002", It.IsAny<CancellationToken>()), Times.Once);
+        imdbClient.VerifyNoOtherCalls();
+    }
+
     private static TvIdentificationHelper CreateHelper(
         string nfoContent,
         Mock<IImdbClient> imdbClient)

@@ -138,6 +138,28 @@ public sealed class TvShowMatchingTests
         Assert.Contains(("Severance", null, ImdbTitleType.Series, 1), searches);
     }
 
+    [Fact]
+    public async Task IdentifyAsync_MarksSuccessfulSearchWithoutResultsAsLookupFailure()
+    {
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Bob's Burgers",
+                null,
+                ImdbTitleType.Series,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(null!));
+        var helper = new TvIdentificationHelper(new Mock<IFileManager>().Object, imdbClient.Object);
+
+        var identification = Assert.Single((await helper.IdentifyAsync(
+            GroupingResult(ShowFolder("Bob's Burgers")))).ShowIdentifications);
+
+        Assert.Equal(TvShowIdentificationStatus.LookupFailed, identification.Status);
+        Assert.Equal(ImdbErrorKind.InvalidResponse, identification.LookupError?.Kind);
+        Assert.Null(identification.MatchedSeries);
+    }
+
     private static TvShowFolderGroup ShowFolder(string name)
     {
         var tvRoot = Path.Combine(Path.GetTempPath(), "TV");
