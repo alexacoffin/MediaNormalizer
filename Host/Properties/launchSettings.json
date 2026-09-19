@@ -1,4 +1,4 @@
-﻿{
+{
   "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
     "MediaNormalizer": {
@@ -6,12 +6,10 @@
       "dotnetRunMessages": true,
       "environmentVariables": {
         "DOTNET_ENVIRONMENT": "Development",
-        "MediaLibrary__Locations__0": "E:\\Videos",
-        "MediaLibrary__Locations__1": "F:\\Videos",
         "MediaLibrary__MediaTypes__0__Id": "1",
         "MediaLibrary__MediaTypes__0__Name": "TV",
         "MediaLibrary__MediaTypes__0__Subdirectory": "TV",
-        "MediaLibrary__MediaTypes__0__Enabled": "true",
+        "MediaLibrary__MediaTypes__0__Enabled": "false",
         "MediaLibrary__MediaTypes__1__Id": "2",
         "MediaLibrary__MediaTypes__1__Name": "MOVIES",
         "MediaLibrary__MediaTypes__1__Subdirectory": "MOVIES",
