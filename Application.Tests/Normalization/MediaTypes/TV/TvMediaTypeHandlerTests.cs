@@ -49,7 +49,7 @@ public sealed class TvMediaTypeHandlerTests
 
         var formattingResult = await handler.NormalizeAsync();
 
-        Assert.Equal([libraryRoot], scannedDirectories);
+        Assert.Equal([libraryRoot, outputRoot], scannedDirectories);
         Assert.Equal(2, formattingResult.RenamedCount);
         Assert.All(
             formattingResult.FileResults,
@@ -67,6 +67,7 @@ public sealed class TvMediaTypeHandlerTests
     {
         var firstRoot = Path.Combine(Path.GetTempPath(), "LibraryOne");
         var secondRoot = Path.Combine(Path.GetTempPath(), "LibraryTwo");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
         var scannedDirectories = new List<string>();
         var fileManager = new Mock<IFileManager>();
         fileManager
@@ -75,16 +76,182 @@ public sealed class TvMediaTypeHandlerTests
             .Returns([]);
         var handler = new TvMediaTypeHandler(
             [firstRoot, secondRoot],
-            Path.Combine(Path.GetTempPath(), "FormattedTV"),
+            outputRoot,
             fileManager.Object,
             new Mock<IImdbClient>().Object);
 
         var result = await handler.NormalizeAsync();
 
-        Assert.Equal([firstRoot, secondRoot], scannedDirectories);
+        Assert.Equal([firstRoot, secondRoot, outputRoot], scannedDirectories);
         Assert.Empty(result.FileResults);
         fileManager.Verify(manager => manager.FindMediaFiles(firstRoot), Times.Once);
         fileManager.Verify(manager => manager.FindMediaFiles(secondRoot), Times.Once);
+        fileManager.Verify(manager => manager.FindMediaFiles(outputRoot), Times.Once);
+    }
+
+    [Fact]
+    public async Task Normalize_ProcessesDestinationFilesWhenIntakeIsEmpty()
+    {
+        var intakeRoot = Path.Combine(Path.GetTempPath(), "EmptyLibrary");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
+        var destinationFile = Path.Combine(outputRoot, "Unsorted.S01E01.mkv");
+        var scannedDirectories = new List<string>();
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(It.IsAny<string>()))
+            .Callback<string>(directory => scannedDirectories.Add(directory))
+            .Returns((string directory) => directory == outputRoot
+                ? [destinationFile]
+                : []);
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Unsorted",
+                null,
+                ImdbTitleType.Series,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage([], 0, 1)));
+        var handler = new TvMediaTypeHandler(
+            [intakeRoot],
+            outputRoot,
+            fileManager.Object,
+            imdbClient.Object);
+
+        var result = await handler.NormalizeAsync();
+
+        Assert.Equal([intakeRoot, outputRoot], scannedDirectories);
+        var fileResult = Assert.Single(result.FileResults);
+        Assert.Equal(destinationFile, fileResult.SourceFilePath);
+        Assert.Equal(MediaFileNormalizationStatus.Skipped, fileResult.Status);
+        imdbClient.Verify(client => client.SearchAsync(
+            "Unsorted",
+            null,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Normalize_ReportsCanonicalDestinationFilesWithoutMovingOrCleaning()
+    {
+        var intakeRoot = Path.Combine(Path.GetTempPath(), "EmptyLibrary");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
+        var destinationFile = Path.Combine(
+            outputRoot,
+            "Bob's Burgers",
+            "Season 01",
+            "Bob's Burgers - S01E01.mkv");
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(intakeRoot))
+            .Returns([]);
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(outputRoot))
+            .Returns([destinationFile]);
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Bob's Burgers",
+                null,
+                ImdbTitleType.Series,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage(
+                [new ImdbTitleSummary("tt14452776", "Bob's Burgers", string.Empty, ImdbTitleType.Series)],
+                1,
+                1)));
+        imdbClient
+            .Setup(client => client.GetEpisodeAsync(
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbTitleDetails>.Failure(
+                new ImdbError(ImdbErrorKind.NotFound, "Not found.")));
+        var handler = new TvMediaTypeHandler(
+            [intakeRoot],
+            outputRoot,
+            fileManager.Object,
+            imdbClient.Object);
+
+        var result = await handler.NormalizeAsync();
+
+        var fileResult = Assert.Single(result.FileResults);
+        Assert.Equal(destinationFile, fileResult.SourceFilePath);
+        Assert.Equal(destinationFile, fileResult.DestinationFilePath);
+        Assert.Equal(MediaFileNormalizationStatus.AlreadyNormalized, fileResult.Status);
+        fileManager.Verify(manager => manager.MoveFile(
+            It.IsAny<string>(),
+            It.IsAny<string>()), Times.Never);
+        fileManager.Verify(manager => manager.TryDeleteEmptyDirectory(
+            It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Normalize_IgnoresMissingDestinationDirectory()
+    {
+        var intakeRoot = Path.Combine(Path.GetTempPath(), "EmptyLibrary");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "MissingFormattedTV");
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(intakeRoot))
+            .Returns([]);
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(outputRoot))
+            .Throws<DirectoryNotFoundException>();
+        var handler = new TvMediaTypeHandler(
+            [intakeRoot],
+            outputRoot,
+            fileManager.Object,
+            new Mock<IImdbClient>().Object);
+
+        var result = await handler.NormalizeAsync();
+
+        Assert.Empty(result.FileResults);
+        fileManager.Verify(manager => manager.FindMediaFiles(intakeRoot), Times.Once);
+        fileManager.Verify(manager => manager.FindMediaFiles(outputRoot), Times.Once);
+    }
+
+    [Fact]
+    public async Task Normalize_DeduplicatesRootsAndDiscoveredFiles()
+    {
+        var intakeRoot = Path.Combine(Path.GetTempPath(), "Library");
+        var outputRoot = Path.Combine(intakeRoot, "FormattedTV");
+        var mediaFile = Path.Combine(intakeRoot, "Unsorted.S01E01.mkv");
+        var scannedDirectories = new List<string>();
+        var fileManager = new Mock<IFileManager>();
+        fileManager
+            .Setup(manager => manager.FindMediaFiles(It.IsAny<string>()))
+            .Callback<string>(directory => scannedDirectories.Add(directory))
+            .Returns((string directory) => directory == intakeRoot || directory == outputRoot
+                ? [mediaFile]
+                : []);
+        var imdbClient = new Mock<IImdbClient>();
+        imdbClient
+            .Setup(client => client.SearchAsync(
+                "Unsorted",
+                null,
+                ImdbTitleType.Series,
+                1,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImdbResult<ImdbSearchPage>.Success(new ImdbSearchPage([], 0, 1)));
+        var handler = new TvMediaTypeHandler(
+            [intakeRoot, intakeRoot],
+            outputRoot,
+            fileManager.Object,
+            imdbClient.Object);
+
+        var result = await handler.NormalizeAsync();
+
+        Assert.Equal([intakeRoot, outputRoot], scannedDirectories);
+        Assert.Single(result.FileResults);
+        imdbClient.Verify(client => client.SearchAsync(
+            "Unsorted",
+            null,
+            ImdbTitleType.Series,
+            1,
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

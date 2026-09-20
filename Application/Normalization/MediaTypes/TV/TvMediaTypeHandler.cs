@@ -7,8 +7,13 @@ namespace Application.Normalization.MediaTypes.TV;
 
 public sealed class TvMediaTypeHandler : IMediaTypeHandler
 {
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
     private readonly string[] mediaLocations;
     private readonly IFileManager fileManager;
+    private readonly string outputDirectory;
     private string[] filesToNormalize = [];
     private TvShowFolderGroupingResult groupingResult = new([], []);
     private TvIdentificationRunResult identificationResult = new([], []);
@@ -21,6 +26,7 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     {
         mediaLocations = locations;
         this.fileManager = fileManager;
+        this.outputDirectory = Path.GetFullPath(outputDirectory);
         identificationHelper = new TvIdentificationHelper(fileManager, imdbClient);
         formatter = new TvMediaTypeFormatter(fileManager, imdbClient, outputDirectory);
     }
@@ -39,10 +45,19 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     public async Task<TvMediaTypeFormattingResult> NormalizeAsync(
         CancellationToken cancellationToken = default)
     {
-        var mediaFiles = mediaLocations
-            .SelectMany(tvRoot => fileManager.FindMediaFiles(tvRoot)
-                .Select(filePath => new TvMediaFile(tvRoot, filePath)))
-            .ToArray();
+        var mediaFilesByPath = new Dictionary<string, TvMediaFile>(PathComparer);
+        foreach (var scanLocation in GetScanLocations())
+        {
+            foreach (var filePath in FindMediaFiles(scanLocation))
+            {
+                var normalizedFilePath = Path.GetFullPath(filePath);
+                mediaFilesByPath.TryAdd(
+                    normalizedFilePath,
+                    new TvMediaFile(scanLocation.RootPath, normalizedFilePath));
+            }
+        }
+
+        var mediaFiles = mediaFilesByPath.Values.ToArray();
 
         filesToNormalize = mediaFiles
             .Select(mediaFile => mediaFile.FilePath)
@@ -54,6 +69,31 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
         identificationResult = await identificationHelper.IdentifyAsync(groupingResult, cancellationToken);
         return await formatter.FormatAsync(identificationResult, cancellationToken);
     }
+
+    private IEnumerable<ScanLocation> GetScanLocations()
+    {
+        var intakeLocations = mediaLocations
+            .Select(rootPath => new ScanLocation(Path.GetFullPath(rootPath), false));
+
+        return intakeLocations
+            .Append(new ScanLocation(outputDirectory, true))
+            .GroupBy(location => location.RootPath, PathComparer)
+            .Select(group => group.First());
+    }
+
+    private string[] FindMediaFiles(ScanLocation scanLocation)
+    {
+        try
+        {
+            return fileManager.FindMediaFiles(scanLocation.RootPath);
+        }
+        catch (DirectoryNotFoundException) when (scanLocation.IsOptional)
+        {
+            return [];
+        }
+    }
+
+    private readonly record struct ScanLocation(string RootPath, bool IsOptional);
 
     private static MediaFileNormalizationResult MapResult(TvMediaFileFormattingResult result) =>
         new(
