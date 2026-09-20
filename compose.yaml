@@ -1,10 +1,45 @@
 services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "${MEDIA_NORMALIZER_DB_PID:-Developer}"
+      MSSQL_SA_PASSWORD: "${MEDIA_NORMALIZER_DB_SA_PASSWORD:?Set MEDIA_NORMALIZER_DB_SA_PASSWORD in .env}"
+    ports:
+      - "127.0.0.1:${MEDIA_NORMALIZER_DB_PORT:-11433}:1433"
+    volumes:
+      - media-normalizer-db-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/1433'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  db-init:
+    build:
+      context: .
+      dockerfile: Database/Deploy.Dockerfile
+    environment:
+      DB_NAME: MediaNormalizer
+      DB_PORT: "1433"
+      DB_SERVER: db
+      MSSQL_SA_PASSWORD: "${MEDIA_NORMALIZER_DB_SA_PASSWORD:?Set MEDIA_NORMALIZER_DB_SA_PASSWORD in .env}"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   media-normalizer:
     build:
       context: .
       dockerfile: Dockerfile
     image: media-normalizer:latest
     restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
     ports:
       - "${MEDIA_NORMALIZER_PORT:-18081}:18081"
     environment:
@@ -30,3 +65,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  media-normalizer-db-data:

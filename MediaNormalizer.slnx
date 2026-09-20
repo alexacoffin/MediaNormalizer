@@ -17,4 +17,10 @@
   <Folder Name="/6. Tests/">
     <Project Path="Application.Tests/Application.Tests.csproj" />
   </Folder>
+  <Folder Name="/7. Database/">
+    <Project Path="Database/MediaNormalizer.Database.sqlproj" Type="42EA0DBD-9CF1-443E-919E-BE9C484E4577">
+      <Configuration Solution="Debug|*" Project="Debug|*|Debug" />
+      <Configuration Solution="Release|*" Project="Release|*|Release" />
+    </Project>
+  </Folder>
 </Solution>
