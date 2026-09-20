@@ -12,7 +12,8 @@ public sealed class MediaTypeHandler(
 {
     public async Task<MediaTypeNormalizationResult> Process(
         MediaTypeNormalizationRequest mediaType,
-        string[] locations)
+        string[] locations,
+        CancellationToken cancellationToken = default)
     {
         if (!mediaType.Enabled)
         {
@@ -32,6 +33,6 @@ public sealed class MediaTypeHandler(
 
         return handler is null
             ? MediaTypeNormalizationResult.Empty
-            : await handler.Normalize();
+            : await handler.Normalize(cancellationToken);
     }
 }

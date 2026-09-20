@@ -10,6 +10,7 @@ COPY ["Application/Application.csproj", "Application/"]
 COPY ["Business/Business.csproj", "Business/"]
 COPY ["Domain/Domain.csproj", "Domain/"]
 COPY ["Infrastructure/Infrastructure.csproj", "Infrastructure/"]
+COPY ["Infrastructure.Database/Infrastructure.Database.csproj", "Infrastructure.Database/"]
 RUN dotnet restore "Host/Host.csproj"
 
 COPY . .

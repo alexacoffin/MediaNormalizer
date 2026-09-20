@@ -46,3 +46,19 @@ dotnet build Database/MediaNormalizer.Database.sqlproj --configuration Release
 ```
 
 The DACPAC is written to `Database/bin/Release/MediaNormalizer.Database.dacpac` and is ignored by Git through the existing build-output rules.
+
+## Local SQL Express development
+
+When running the Host directly from Visual Studio or `dotnet run`, Development configuration uses:
+
+```text
+Server=localhost\SQLEXPRESS;Database=MediaNormalizer;Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True
+```
+
+Deploy or update the local schema with the SQL tooling installed by Visual Studio:
+
+```powershell
+.\Database\Deploy-Local.ps1
+```
+
+The script rebuilds the DACPAC, discovers installed Visual Studio SQL database tooling, and connects to the local SQL Express instance using the current Windows account. It creates or updates the `MediaNormalizer` database and blocks potentially data-lossy changes. Use `-SqlPackagePath` when the tooling is installed outside the standard Visual Studio locations. Docker Compose uses its own SQL Server connection and is unaffected by this Development setting.

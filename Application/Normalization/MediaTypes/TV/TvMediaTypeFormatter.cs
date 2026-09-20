@@ -63,14 +63,22 @@ internal sealed class TvMediaTypeFormatter
             if (identification.Status != TvShowIdentificationStatus.Matched
                 || identification.MatchedSeries is null)
             {
-                AddSkippedResults(results, filePaths, "The series was not matched with confidence.");
+                AddSkippedResults(
+                    results,
+                    GetRootSourceRole(tvRootPath),
+                    filePaths,
+                    "The series was not matched with confidence.");
                 continue;
             }
 
             var seriesName = CreateSeriesName(identification.MatchedSeries);
             if (string.IsNullOrWhiteSpace(seriesName))
             {
-                AddFailedResults(results, filePaths, "The matched series title cannot be used as a file name.");
+                AddFailedResults(
+                    results,
+                    GetRootSourceRole(tvRootPath),
+                    filePaths,
+                    "The matched series title cannot be used as a file name.");
                 continue;
             }
 
@@ -116,20 +124,25 @@ internal sealed class TvMediaTypeFormatter
         CancellationToken cancellationToken)
     {
         var candidate = TvFilenameParser.TryParse(sourceFilePath);
+        var sourceRole = IsWithinOutputDirectory(sourceFilePath) ? "Destination" : "Intake";
+        var titleName = matchedSeries.Title;
+        var omdbEntryId = matchedSeries.ImdbId;
+        var releaseYear = TryParseReleaseYear(matchedSeries.Year);
         if (candidate is null)
         {
-            return Skipped(sourceFilePath, "No supported episode marker was found.");
+            return Skipped(sourceFilePath, sourceRole, omdbEntryId, titleName, releaseYear, "No supported episode marker was found.");
         }
 
         if (candidate.IsMultiEpisode)
         {
-            return Skipped(sourceFilePath, "Multi-episode files are not supported.");
+            return Skipped(sourceFilePath, sourceRole, omdbEntryId, titleName, releaseYear, "Multi-episode files are not supported.");
         }
 
         var extension = Path.GetExtension(sourceFilePath);
         string destinationDirectory;
         string destinationFileName;
         string message;
+        string? episodeTitle = null;
 
         if (candidate.AirDate is not null)
         {
@@ -141,7 +154,7 @@ internal sealed class TvMediaTypeFormatter
         {
             destinationDirectory = Path.Combine(outputDirectory, seriesName, $"Season {candidate.SeasonNumber.Value:D2}");
             var episodeCode = $"S{candidate.SeasonNumber.Value:D2}E{candidate.EpisodeNumber.Value:D2}";
-            var episodeTitle = await TryGetEpisodeTitleAsync(
+            episodeTitle = await TryGetEpisodeTitleAsync(
                 matchedSeries.ImdbId,
                 candidate.SeasonNumber.Value,
                 candidate.EpisodeNumber.Value,
@@ -155,7 +168,13 @@ internal sealed class TvMediaTypeFormatter
         }
         else
         {
-            return Skipped(sourceFilePath, "The episode marker does not include both season and episode numbers.");
+            return Skipped(
+                sourceFilePath,
+                sourceRole,
+                omdbEntryId,
+                titleName,
+                releaseYear,
+                "The episode marker does not include both season and episode numbers.");
         }
 
         var destinationFilePath = Path.Combine(destinationDirectory, destinationFileName);
@@ -165,7 +184,15 @@ internal sealed class TvMediaTypeFormatter
                 sourceFilePath,
                 destinationFilePath,
                 MediaFileNormalizationStatus.AlreadyNormalized,
-                "The file already has the canonical path and name.");
+                "The file already has the canonical path and name.",
+                sourceRole,
+                omdbEntryId,
+                titleName,
+                releaseYear,
+                candidate.SeasonNumber,
+                candidate.EpisodeNumber,
+                candidate.AirDate,
+                episodeTitle);
         }
 
         if (fileManager.FileExists(destinationFilePath))
@@ -174,7 +201,15 @@ internal sealed class TvMediaTypeFormatter
                 sourceFilePath,
                 destinationFilePath,
                 MediaFileNormalizationStatus.Skipped,
-                "The destination file already exists.");
+                "The destination file already exists.",
+                sourceRole,
+                omdbEntryId,
+                titleName,
+                releaseYear,
+                candidate.SeasonNumber,
+                candidate.EpisodeNumber,
+                candidate.AirDate,
+                episodeTitle);
         }
 
         try
@@ -185,23 +220,31 @@ internal sealed class TvMediaTypeFormatter
                 sourceFilePath,
                 destinationFilePath,
                 MediaFileNormalizationStatus.Renamed,
-                message);
+                message,
+                sourceRole,
+                omdbEntryId,
+                titleName,
+                releaseYear,
+                candidate.SeasonNumber,
+                candidate.EpisodeNumber,
+                candidate.AirDate,
+                episodeTitle);
         }
         catch (UnauthorizedAccessException exception)
         {
-            return Failed(sourceFilePath, destinationFilePath, exception.Message);
+            return Failed(sourceFilePath, destinationFilePath, sourceRole, omdbEntryId, titleName, releaseYear, candidate, episodeTitle, exception.Message);
         }
         catch (DirectoryNotFoundException exception)
         {
-            return Failed(sourceFilePath, destinationFilePath, exception.Message);
+            return Failed(sourceFilePath, destinationFilePath, sourceRole, omdbEntryId, titleName, releaseYear, candidate, episodeTitle, exception.Message);
         }
         catch (FileNotFoundException exception)
         {
-            return Failed(sourceFilePath, destinationFilePath, exception.Message);
+            return Failed(sourceFilePath, destinationFilePath, sourceRole, omdbEntryId, titleName, releaseYear, candidate, episodeTitle, exception.Message);
         }
         catch (IOException exception)
         {
-            return Failed(sourceFilePath, destinationFilePath, exception.Message);
+            return Failed(sourceFilePath, destinationFilePath, sourceRole, omdbEntryId, titleName, releaseYear, candidate, episodeTitle, exception.Message);
         }
     }
 
@@ -235,34 +278,70 @@ internal sealed class TvMediaTypeFormatter
 
     private static void AddSkippedResults(
         ICollection<TvMediaFileFormattingResult> results,
+        string sourceRole,
         IEnumerable<string> filePaths,
         string message)
     {
         foreach (var filePath in filePaths)
         {
-            results.Add(Skipped(filePath, message));
+            results.Add(Skipped(filePath, sourceRole, null, null, null, message));
         }
     }
 
     private static void AddFailedResults(
         ICollection<TvMediaFileFormattingResult> results,
+        string sourceRole,
         IEnumerable<string> filePaths,
         string message)
     {
         foreach (var filePath in filePaths)
         {
-            results.Add(Failed(filePath, null, message));
+            results.Add(Failed(filePath, null, sourceRole, null, null, null, null, null, message));
         }
     }
 
-    private static TvMediaFileFormattingResult Skipped(string sourceFilePath, string message) =>
-        new(sourceFilePath, null, MediaFileNormalizationStatus.Skipped, message);
+    private static TvMediaFileFormattingResult Skipped(
+        string sourceFilePath,
+        string sourceRole,
+        string? omdbEntryId,
+        string? titleName,
+        short? releaseYear,
+        string message) =>
+        new(sourceFilePath, null, MediaFileNormalizationStatus.Skipped, message, sourceRole, omdbEntryId, titleName, releaseYear);
 
     private static TvMediaFileFormattingResult Failed(
         string sourceFilePath,
         string? destinationFilePath,
+        string sourceRole,
+        string? omdbEntryId,
+        string? titleName,
+        short? releaseYear,
+        TvFilenameCandidate? candidate,
+        string? episodeTitle,
         string message) =>
-        new(sourceFilePath, destinationFilePath, MediaFileNormalizationStatus.Failed, message);
+        new(
+            sourceFilePath,
+            destinationFilePath,
+            MediaFileNormalizationStatus.Failed,
+            message,
+            sourceRole,
+            omdbEntryId,
+            titleName,
+            releaseYear,
+            candidate?.SeasonNumber,
+            candidate?.EpisodeNumber,
+            candidate?.AirDate,
+            episodeTitle);
+
+    private bool IsWithinOutputDirectory(string path) =>
+        PathsEqual(path, outputDirectory)
+        || IsChildOf(Path.GetFullPath(path), outputDirectory);
+
+    private string GetRootSourceRole(string rootPath) =>
+        IsWithinOutputDirectory(rootPath) ? "Destination" : "Intake";
+
+    private static short? TryParseReleaseYear(string value) =>
+        short.TryParse(YearExpression.Match(value).Value, out var year) ? year : null;
 
     private static string? CreateSeriesName(ImdbTitleSummary matchedSeries)
     {

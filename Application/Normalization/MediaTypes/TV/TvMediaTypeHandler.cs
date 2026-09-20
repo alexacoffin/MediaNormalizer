@@ -34,9 +34,9 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     private readonly TvIdentificationHelper identificationHelper;
     private readonly TvMediaTypeFormatter formatter;
 
-    public async Task<MediaTypeNormalizationResult> Normalize()
+    public async Task<MediaTypeNormalizationResult> Normalize(CancellationToken cancellationToken = default)
     {
-        var formattingResult = await NormalizeAsync();
+        var formattingResult = await NormalizeAsync(cancellationToken);
         return new MediaTypeNormalizationResult(
             formattingResult.FileResults.Select(MapResult),
             formattingResult.DeletedDirectories);
@@ -100,5 +100,13 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
             result.SourceFilePath,
             result.DestinationFilePath,
             result.Status,
-            result.Message);
+            result.Message,
+            result.SourceRole,
+            result.OmdbEntryId,
+            result.TitleName,
+            result.ReleaseYear,
+            result.SeasonNumber,
+            result.EpisodeNumber,
+            result.AirDate,
+            result.EpisodeTitle);
 }

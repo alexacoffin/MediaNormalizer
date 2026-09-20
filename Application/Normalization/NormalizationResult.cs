@@ -14,12 +14,28 @@ public sealed class MediaFileNormalizationResult
         string sourceFilePath,
         string? destinationFilePath,
         MediaFileNormalizationStatus status,
-        string message)
+        string message,
+        string sourceRole = "Intake",
+        string? omdbEntryId = null,
+        string? titleName = null,
+        short? releaseYear = null,
+        int? seasonNumber = null,
+        int? episodeNumber = null,
+        DateOnly? airDate = null,
+        string? episodeTitle = null)
     {
         SourceFilePath = sourceFilePath;
         DestinationFilePath = destinationFilePath;
         Status = status;
         Message = message;
+        SourceRole = sourceRole;
+        OmdbEntryId = omdbEntryId;
+        TitleName = titleName;
+        ReleaseYear = releaseYear;
+        SeasonNumber = seasonNumber;
+        EpisodeNumber = episodeNumber;
+        AirDate = airDate;
+        EpisodeTitle = episodeTitle;
     }
 
     public string SourceFilePath { get; }
@@ -29,6 +45,22 @@ public sealed class MediaFileNormalizationResult
     public MediaFileNormalizationStatus Status { get; }
 
     public string Message { get; }
+
+    public string SourceRole { get; }
+
+    public string? OmdbEntryId { get; }
+
+    public string? TitleName { get; }
+
+    public short? ReleaseYear { get; }
+
+    public int? SeasonNumber { get; }
+
+    public int? EpisodeNumber { get; }
+
+    public DateOnly? AirDate { get; }
+
+    public string? EpisodeTitle { get; }
 }
 
 public sealed class MediaTypeNormalizationResult

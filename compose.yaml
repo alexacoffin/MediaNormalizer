@@ -45,6 +45,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: "18081"
+      ConnectionStrings__MediaNormalizer: "Server=db,1433;Initial Catalog=MediaNormalizer;User ID=sa;Password=${MEDIA_NORMALIZER_DB_SA_PASSWORD:?Set MEDIA_NORMALIZER_DB_SA_PASSWORD in .env};Encrypt=False;TrustServerCertificate=True;Connection Timeout=10"
       Omdb__ApiKey: "${OMDB_API_KEY:?Set OMDB_API_KEY in .env}"
       MediaLibrary__Locations__0: /media/library
       MediaLibrary__MediaTypes__0__Id: Tv

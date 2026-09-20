@@ -8,6 +8,6 @@ public sealed class MovieMediaTypeHandler : IMediaTypeHandler
     {
     }
 
-    public Task<MediaTypeNormalizationResult> Normalize() =>
+    public Task<MediaTypeNormalizationResult> Normalize(CancellationToken cancellationToken = default) =>
         Task.FromResult(MediaTypeNormalizationResult.Empty);
 }

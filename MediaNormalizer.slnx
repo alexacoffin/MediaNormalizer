@@ -10,6 +10,7 @@
   </Folder>
   <Folder Name="/4. Infrastructure/">
     <Project Path="Infrastructure/Infrastructure.csproj" />
+    <Project Path="Infrastructure.Database/Infrastructure.Database.csproj" />
   </Folder>
   <Folder Name="/5. Host/">
     <Project Path="Host/Host.csproj" />
