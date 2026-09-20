@@ -4,5 +4,5 @@ namespace Business.Services;
 
 public interface INormalizationService
 {
-    Task<NormalizationResult> NormalizeMediaFiles();
+    Task<NormalizationResult> NormalizeMediaFiles(CancellationToken cancellationToken = default);
 }

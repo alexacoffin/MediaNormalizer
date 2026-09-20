@@ -1,4 +1,5 @@
 using Application.Abstractions.FileSystem;
+using Application.Abstractions.Database;
 using Application.Abstractions.Imdb;
 using Application.Configuration;
 using Application.Normalization;
@@ -6,6 +7,7 @@ using Business.Services;
 using Host.Configuration;
 using Infrastructure.FileSystem;
 using Infrastructure.Imdb;
+using Infrastructure.Database;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Options;
 
@@ -61,8 +63,16 @@ builder.Services.AddHttpClient<IImdbClient, ImdbClient>((services, client) =>
 builder.Logging.AddFilter(
     $"System.Net.Http.HttpClient.{typeof(IImdbClient).FullName}",
     LogLevel.None);
+builder.Services.AddSingleton<IDbConnectionFactory>(_ =>
+    new SqlConnectionFactory(builder.Configuration.GetConnectionString("MediaNormalizer")));
+builder.Services.AddScoped<INormalizationRunsRepository, NormalizationRunsRepository>();
+builder.Services.AddScoped<IMediaTitlesRepository, MediaTitlesRepository>();
+builder.Services.AddScoped<IMediaFilesRepository, MediaFilesRepository>();
+builder.Services.AddScoped<INormalizationFileResultsRepository, NormalizationFileResultsRepository>();
+builder.Services.AddScoped<INormalizationDeletedDirectoriesRepository, NormalizationDeletedDirectoriesRepository>();
+builder.Services.AddScoped<ITvNormalizationInventoryProvider, TvNormalizationInventoryProvider>();
 builder.Services.AddSingleton<IFileManager, FileManager>();
-builder.Services.AddTransient<MediaTypeHandler>();
+builder.Services.AddTransient<MediaTypeManager>();
 builder.Services.AddTransient<INormalizationService, NormalizationService>();
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();

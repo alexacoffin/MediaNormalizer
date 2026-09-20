@@ -10,11 +10,18 @@
   </Folder>
   <Folder Name="/4. Infrastructure/">
     <Project Path="Infrastructure/Infrastructure.csproj" />
+    <Project Path="Infrastructure.Database/Infrastructure.Database.csproj" />
   </Folder>
   <Folder Name="/5. Host/">
     <Project Path="Host/Host.csproj" />
   </Folder>
   <Folder Name="/6. Tests/">
     <Project Path="Application.Tests/Application.Tests.csproj" />
+  </Folder>
+  <Folder Name="/7. Database/">
+    <Project Path="Database/MediaNormalizer.Database.sqlproj" Type="42EA0DBD-9CF1-443E-919E-BE9C484E4577">
+      <Configuration Solution="Debug|*" Project="Debug|*|Debug" />
+      <Configuration Solution="Release|*" Project="Release|*|Release" />
+    </Project>
   </Folder>
 </Solution>

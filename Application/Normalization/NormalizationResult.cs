@@ -14,12 +14,28 @@ public sealed class MediaFileNormalizationResult
         string sourceFilePath,
         string? destinationFilePath,
         MediaFileNormalizationStatus status,
-        string message)
+        string message,
+        string sourceRole = "Intake",
+        string? omdbEntryId = null,
+        string? titleName = null,
+        short? releaseYear = null,
+        int? seasonNumber = null,
+        int? episodeNumber = null,
+        DateOnly? airDate = null,
+        string? episodeTitle = null)
     {
         SourceFilePath = sourceFilePath;
         DestinationFilePath = destinationFilePath;
         Status = status;
         Message = message;
+        SourceRole = sourceRole;
+        OmdbEntryId = omdbEntryId;
+        TitleName = titleName;
+        ReleaseYear = releaseYear;
+        SeasonNumber = seasonNumber;
+        EpisodeNumber = episodeNumber;
+        AirDate = airDate;
+        EpisodeTitle = episodeTitle;
     }
 
     public string SourceFilePath { get; }
@@ -29,19 +45,43 @@ public sealed class MediaFileNormalizationResult
     public MediaFileNormalizationStatus Status { get; }
 
     public string Message { get; }
+
+    public string SourceRole { get; }
+
+    public string? OmdbEntryId { get; }
+
+    public string? TitleName { get; }
+
+    public short? ReleaseYear { get; }
+
+    public int? SeasonNumber { get; }
+
+    public int? EpisodeNumber { get; }
+
+    public DateOnly? AirDate { get; }
+
+    public string? EpisodeTitle { get; }
 }
 
 public sealed class MediaTypeNormalizationResult
 {
     public MediaTypeNormalizationResult(
         IEnumerable<MediaFileNormalizationResult> fileResults,
-        IEnumerable<string> deletedDirectories)
+        IEnumerable<string> deletedDirectories,
+        IEnumerable<long>? observedFileIds = null,
+        IEnumerable<long>? observedTitleIds = null,
+        bool processedSuccessfully = false,
+        Exception? persistenceFailure = null)
     {
         ArgumentNullException.ThrowIfNull(fileResults);
         ArgumentNullException.ThrowIfNull(deletedDirectories);
 
         FileResults = fileResults.ToArray();
         DeletedDirectories = deletedDirectories.ToArray();
+        ObservedFileIds = (observedFileIds ?? []).Distinct().ToArray();
+        ObservedTitleIds = (observedTitleIds ?? []).Distinct().ToArray();
+        ProcessedSuccessfully = processedSuccessfully;
+        PersistenceFailure = persistenceFailure;
     }
 
     public static MediaTypeNormalizationResult Empty { get; } = new([], []);
@@ -49,6 +89,23 @@ public sealed class MediaTypeNormalizationResult
     public MediaFileNormalizationResult[] FileResults { get; }
 
     public string[] DeletedDirectories { get; }
+
+    public long[] ObservedFileIds { get; }
+
+    public long[] ObservedTitleIds { get; }
+
+    public bool ProcessedSuccessfully { get; }
+
+    public Exception? PersistenceFailure { get; }
+
+    public MediaTypeNormalizationResult WithPersistenceFailure(Exception exception) =>
+        new(
+            FileResults,
+            DeletedDirectories,
+            ObservedFileIds,
+            ObservedTitleIds,
+            ProcessedSuccessfully,
+            exception);
 }
 
 public sealed class NormalizationResult

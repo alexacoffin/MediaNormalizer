@@ -1,0 +1,20 @@
+<Project DefaultTargets="Build">
+  <Sdk Name="Microsoft.Build.Sql" Version="2.3.0" />
+
+  <PropertyGroup>
+    <Name>MediaNormalizer.Database</Name>
+    <DSP>Microsoft.Data.Tools.Schema.Sql.Sql160DatabaseSchemaProvider</DSP>
+    <DefaultSchema>dbo</DefaultSchema>
+    <DefaultCollation>SQL_Latin1_General_CP1_CI_AS</DefaultCollation>
+    <ModelCollation>1033, CI</ModelCollation>
+    <RunSqlCodeAnalysis>true</RunSqlCodeAnalysis>
+    <TreatTSqlWarningsAsErrors>true</TreatTSqlWarningsAsErrors>
+    <DacApplicationName>MediaNormalizer</DacApplicationName>
+    <DacVersion>1.0.0.0</DacVersion>
+    <SkipCheckForNewSDKVersion>true</SkipCheckForNewSDKVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PostDeploy Include="Scripts\PostDeploy.sql" />
+  </ItemGroup>
+</Project>
