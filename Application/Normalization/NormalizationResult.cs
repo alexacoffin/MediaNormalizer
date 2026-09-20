@@ -67,13 +67,19 @@ public sealed class MediaTypeNormalizationResult
 {
     public MediaTypeNormalizationResult(
         IEnumerable<MediaFileNormalizationResult> fileResults,
-        IEnumerable<string> deletedDirectories)
+        IEnumerable<string> deletedDirectories,
+        IEnumerable<long>? observedFileIds = null,
+        IEnumerable<long>? observedTitleIds = null,
+        bool processedSuccessfully = false)
     {
         ArgumentNullException.ThrowIfNull(fileResults);
         ArgumentNullException.ThrowIfNull(deletedDirectories);
 
         FileResults = fileResults.ToArray();
         DeletedDirectories = deletedDirectories.ToArray();
+        ObservedFileIds = (observedFileIds ?? []).Distinct().ToArray();
+        ObservedTitleIds = (observedTitleIds ?? []).Distinct().ToArray();
+        ProcessedSuccessfully = processedSuccessfully;
     }
 
     public static MediaTypeNormalizationResult Empty { get; } = new([], []);
@@ -81,6 +87,12 @@ public sealed class MediaTypeNormalizationResult
     public MediaFileNormalizationResult[] FileResults { get; }
 
     public string[] DeletedDirectories { get; }
+
+    public long[] ObservedFileIds { get; }
+
+    public long[] ObservedTitleIds { get; }
+
+    public bool ProcessedSuccessfully { get; }
 }
 
 public sealed class NormalizationResult

@@ -1,3 +1,4 @@
+using Application.Abstractions.Database;
 using Application.Abstractions.FileSystem;
 using Application.Abstractions.Imdb;
 using Application.Normalization.MediaTypes.Movies;
@@ -8,7 +9,8 @@ namespace Application.Normalization;
 
 public sealed class MediaTypeHandler(
     IFileManager fileManager,
-    IImdbClient imdbClient)
+    IImdbClient imdbClient,
+    ITvNormalizationInventoryProvider? tvInventoryProvider = null)
 {
     public async Task<MediaTypeNormalizationResult> Process(
         MediaTypeNormalizationRequest mediaType,
@@ -26,7 +28,8 @@ public sealed class MediaTypeHandler(
                 locations,
                 mediaType.OutputDirectory,
                 fileManager,
-                imdbClient),
+                imdbClient,
+                tvInventoryProvider),
             MediaType.Movies => new MovieMediaTypeHandler(locations),
             _ => null
         };

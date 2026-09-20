@@ -70,6 +70,7 @@ builder.Services.AddScoped<IMediaTitlesRepository, MediaTitlesRepository>();
 builder.Services.AddScoped<IMediaFilesRepository, MediaFilesRepository>();
 builder.Services.AddScoped<INormalizationFileResultsRepository, NormalizationFileResultsRepository>();
 builder.Services.AddScoped<INormalizationDeletedDirectoriesRepository, NormalizationDeletedDirectoriesRepository>();
+builder.Services.AddScoped<ITvNormalizationInventoryProvider, TvNormalizationInventoryProvider>();
 builder.Services.AddSingleton<IFileManager, FileManager>();
 builder.Services.AddTransient<MediaTypeHandler>();
 builder.Services.AddTransient<INormalizationService, NormalizationService>();

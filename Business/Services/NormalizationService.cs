@@ -45,7 +45,7 @@ public sealed class NormalizationService : INormalizationService
         var titleIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var seenTitleIds = new HashSet<long>();
         var seenFileIds = new HashSet<long>();
-        var tvProcessedSuccessfully = false;
+        var mediaProcessedSuccessfully = false;
 
         try
         {
@@ -89,10 +89,12 @@ public sealed class NormalizationService : INormalizationService
 
             fileResults.AddRange(result.FileResults);
             deletedDirectories.AddRange(result.DeletedDirectories);
+            seenFileIds.UnionWith(result.ObservedFileIds);
+            seenTitleIds.UnionWith(result.ObservedTitleIds);
+            mediaProcessedSuccessfully |= result.ProcessedSuccessfully;
 
             if (normalizationRunId.HasValue && mediaType.Id == MediaType.Tv)
             {
-                tvProcessedSuccessfully |= mediaType.Enabled;
                 try
                 {
                     await PersistTvResultAsync(normalizationRunId.Value, mediaType, result, titleIds, seenTitleIds, seenFileIds, cancellationToken);
@@ -114,7 +116,7 @@ public sealed class NormalizationService : INormalizationService
         {
             try
             {
-                if (tvProcessedSuccessfully)
+                if (mediaProcessedSuccessfully)
                 {
                     await ReconcileTvRowsAsync(seenTitleIds, seenFileIds, cancellationToken);
                 }
