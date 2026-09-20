@@ -4,10 +4,11 @@ using Application.Abstractions.Database.Models;
 using Application.Abstractions.Imdb;
 using Application.Normalization;
 using Application.Normalization.MediaTypes.TV.Internals;
+using Microsoft.Extensions.Logging;
 
 namespace Application.Normalization.MediaTypes.TV;
 
-public sealed class TvMediaTypeHandler : IMediaTypeHandler
+public sealed class TvMediaTypeHandler : MediaTypeHandlerBase
 {
     private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
@@ -17,24 +18,47 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     private readonly IFileManager fileManager;
     private readonly string outputDirectory;
     private readonly ITvNormalizationInventoryProvider? inventoryProvider;
+    private readonly IMediaTitlesRepository? titlesRepository;
+    private readonly IMediaFilesRepository? filesRepository;
+    private readonly INormalizationFileResultsRepository? fileResultsRepository;
+    private readonly INormalizationDeletedDirectoriesRepository? deletedDirectoriesRepository;
     private MediaTypeNormalizationInventory? inventory;
     private bool inventoryLoaded;
     private string[] filesToNormalize = [];
     private TvShowFolderGroupingResult groupingResult = new([], []);
     private TvIdentificationRunResult identificationResult = new([], []);
     private InventoryResult[] inventoryResults = [];
+    private readonly HashSet<long> persistedFileIds = [];
+    private readonly HashSet<long> persistedTitleIds = [];
+
+    private bool PersistenceAvailable =>
+        titlesRepository is not null
+        && filesRepository is not null
+        && fileResultsRepository is not null
+        && deletedDirectoriesRepository is not null;
 
     public TvMediaTypeHandler(
         string[] locations,
         string outputDirectory,
         IFileManager fileManager,
         IImdbClient imdbClient,
-        ITvNormalizationInventoryProvider? inventoryProvider = null)
+        ITvNormalizationInventoryProvider? inventoryProvider = null,
+        IMediaTitlesRepository? titlesRepository = null,
+        IMediaFilesRepository? filesRepository = null,
+        INormalizationFileResultsRepository? fileResultsRepository = null,
+        INormalizationDeletedDirectoriesRepository? deletedDirectoriesRepository = null,
+        INormalizationRunsRepository? runsRepository = null,
+        ILogger? logger = null)
+        : base(runsRepository, logger)
     {
         mediaLocations = locations;
         this.fileManager = fileManager;
         this.outputDirectory = Path.GetFullPath(outputDirectory);
         this.inventoryProvider = inventoryProvider;
+        this.titlesRepository = titlesRepository;
+        this.filesRepository = filesRepository;
+        this.fileResultsRepository = fileResultsRepository;
+        this.deletedDirectoriesRepository = deletedDirectoriesRepository;
         identificationHelper = new TvIdentificationHelper(fileManager, imdbClient);
         formatter = new TvMediaTypeFormatter(fileManager, imdbClient, outputDirectory);
     }
@@ -42,7 +66,7 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
     private readonly TvIdentificationHelper identificationHelper;
     private readonly TvMediaTypeFormatter formatter;
 
-    public async Task<MediaTypeNormalizationResult> Normalize(CancellationToken cancellationToken = default)
+    public override async Task<MediaTypeNormalizationResult> Normalize(CancellationToken cancellationToken = default)
     {
         var formattingResult = await NormalizeAsync(cancellationToken);
         return new MediaTypeNormalizationResult(
@@ -53,6 +77,133 @@ public sealed class TvMediaTypeHandler : IMediaTypeHandler
                 .Where(result => result.TitleId.HasValue)
                 .Select(result => result.TitleId!.Value),
             processedSuccessfully: true);
+    }
+
+    public override async Task PersistAsync(
+        MediaTypeNormalizationRequest mediaType,
+        long normalizationRunId,
+        MediaTypeNormalizationResult result,
+        CancellationToken cancellationToken = default)
+    {
+        if (!PersistenceAvailable)
+        {
+            return;
+        }
+
+        persistedFileIds.Clear();
+        persistedTitleIds.Clear();
+        var titleIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var fileResult in result.FileResults)
+        {
+            long? titleId = null;
+            if (!string.IsNullOrWhiteSpace(fileResult.OmdbEntryId))
+            {
+                if (!titleIds.TryGetValue(fileResult.OmdbEntryId, out var persistedTitleId))
+                {
+                    var title = await titlesRepository!.UpsertAsync(
+                        new MediaTitleUpsert(
+                            null,
+                            (int)mediaType.Id,
+                            fileResult.OmdbEntryId,
+                            fileResult.TitleName,
+                            fileResult.ReleaseYear,
+                            normalizationRunId,
+                            true),
+                        cancellationToken);
+                    persistedTitleId = title.Id;
+                    titleIds[fileResult.OmdbEntryId] = persistedTitleId;
+                }
+
+                titleId = persistedTitleId;
+                persistedTitleIds.Add(persistedTitleId);
+            }
+
+            var currentPath = fileResult.Status is MediaFileNormalizationStatus.Renamed or MediaFileNormalizationStatus.AlreadyNormalized
+                ? fileResult.DestinationFilePath ?? fileResult.SourceFilePath
+                : fileResult.SourceFilePath;
+            var existingFile = await filesRepository!.GetByCurrentPathAsync(
+                currentPath,
+                true,
+                cancellationToken);
+            var persistedFile = await filesRepository.UpsertAsync(
+                new MediaFileUpsert(
+                    existingFile?.Id,
+                    titleId,
+                    (int)mediaType.Id,
+                    currentPath,
+                    fileResult.DestinationFilePath,
+                    fileResult.SeasonNumber,
+                    fileResult.EpisodeNumber,
+                    fileResult.AirDate,
+                    fileResult.EpisodeTitle,
+                    fileResult.Status.ToString(),
+                    fileResult.Message,
+                    existingFile?.FirstSeenRunId ?? normalizationRunId,
+                    normalizationRunId,
+                    true),
+                cancellationToken);
+            persistedFileIds.Add(persistedFile.Id);
+
+            await fileResultsRepository!.UpsertAsync(
+                new NormalizationFileResultUpsert(
+                    null,
+                    normalizationRunId,
+                    persistedFile.Id,
+                    titleId,
+                    (int)mediaType.Id,
+                    fileResult.SourceFilePath,
+                    fileResult.DestinationFilePath,
+                    fileResult.Status.ToString(),
+                    fileResult.Message,
+                    fileResult.SourceRole),
+                cancellationToken);
+        }
+
+        foreach (var directory in result.DeletedDirectories)
+        {
+            await deletedDirectoriesRepository!.UpsertAsync(
+                new NormalizationDeletedDirectoryUpsert(
+                    null,
+                    normalizationRunId,
+                    (int)mediaType.Id,
+                    directory),
+                cancellationToken);
+        }
+    }
+
+    public override async Task ReconcileAsync(
+        MediaTypeNormalizationResult result,
+        CancellationToken cancellationToken = default)
+    {
+        if (!PersistenceAvailable)
+        {
+            return;
+        }
+
+        var seenFileIds = result.ObservedFileIds
+            .Concat(persistedFileIds)
+            .ToHashSet();
+        var seenTitleIds = result.ObservedTitleIds
+            .Concat(persistedTitleIds)
+            .ToHashSet();
+        const int tvTypeId = (int)Domain.Enums.MediaType.Tv;
+
+        foreach (var file in await filesRepository!.GetActiveByMediaTypeAsync(tvTypeId, cancellationToken))
+        {
+            if (!seenFileIds.Contains(file.Id))
+            {
+                await filesRepository.DeleteAsync(file.Id, cancellationToken);
+            }
+        }
+
+        foreach (var title in await titlesRepository!.GetActiveByMediaTypeAsync(tvTypeId, cancellationToken))
+        {
+            if (!seenTitleIds.Contains(title.Id))
+            {
+                await titlesRepository.DeleteAsync(title.Id, cancellationToken);
+            }
+        }
     }
 
     public async Task<TvMediaTypeFormattingResult> NormalizeAsync(

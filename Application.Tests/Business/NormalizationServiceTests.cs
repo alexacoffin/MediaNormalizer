@@ -60,6 +60,7 @@ public sealed class NormalizationServiceTests
         var fileResults = new Mock<INormalizationFileResultsRepository>();
         fileResults.Setup(repository => repository.UpsertAsync(It.IsAny<NormalizationFileResultUpsert>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new NormalizationFileResult(8, 42, 7, 5, 1, destinationFile, destinationFile, "AlreadyNormalized", "inventory", "Destination", DateTime.UtcNow));
+        var deletedDirectories = new Mock<INormalizationDeletedDirectoriesRepository>();
         var inventoryProvider = new Mock<ITvNormalizationInventoryProvider>();
         inventoryProvider
             .Setup(provider => provider.GetAsync(It.IsAny<CancellationToken>()))
@@ -67,12 +68,15 @@ public sealed class NormalizationServiceTests
 
         var service = new NormalizationService(
             CreateLibraryRequest(intakeRoot, outputRoot),
-            new MediaTypeHandler(fileManager.Object, new Mock<IImdbClient>().Object, inventoryProvider.Object),
-            runs.Object,
-            titles.Object,
-            files.Object,
-            fileResults.Object,
-            new Mock<INormalizationDeletedDirectoriesRepository>().Object);
+            new MediaTypeManager(
+                fileManager.Object,
+                new Mock<IImdbClient>().Object,
+                inventoryProvider.Object,
+                titles.Object,
+                files.Object,
+                fileResults.Object,
+                deletedDirectories.Object),
+            runs.Object);
 
         var result = await service.NormalizeMediaFiles();
 
@@ -126,12 +130,15 @@ public sealed class NormalizationServiceTests
 
         var service = new NormalizationService(
             CreateLibraryRequest(libraryRoot, outputRoot),
-            new MediaTypeHandler(fileManager.Object, imdbClient.Object, inventoryProvider.Object),
-            runs.Object,
-            titles.Object,
-            files.Object,
-            fileResults.Object,
-            new Mock<INormalizationDeletedDirectoriesRepository>().Object);
+            new MediaTypeManager(
+                fileManager.Object,
+                imdbClient.Object,
+                inventoryProvider.Object,
+                titles.Object,
+                files.Object,
+                fileResults.Object,
+                new Mock<INormalizationDeletedDirectoriesRepository>().Object),
+            runs.Object);
 
         var result = await service.NormalizeMediaFiles();
 
@@ -142,6 +149,59 @@ public sealed class NormalizationServiceTests
             ImdbTitleType.Series,
             1,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task NormalizeMediaFiles_RetainsFilesystemResultAndMarksRunFailedWhenTvPersistenceFails()
+    {
+        var libraryRoot = Path.Combine(Path.GetTempPath(), "Library");
+        var outputRoot = Path.Combine(Path.GetTempPath(), "FormattedTV");
+        var sourcePath = Path.Combine(libraryRoot, "Bob's Burgers", "Bob's.Burgers.S01E01.mkv");
+        var fileManager = new Mock<IFileManager>();
+        fileManager.Setup(manager => manager.FindMediaFiles(libraryRoot)).Returns([sourcePath]);
+        fileManager.Setup(manager => manager.FindMediaFiles(outputRoot)).Returns([]);
+        fileManager.Setup(manager => manager.FileExists(It.IsAny<string>())).Returns(false);
+        fileManager.Setup(manager => manager.TryDeleteEmptyDirectory(It.IsAny<string>())).Returns(false);
+        var runs = CreateSuccessfulRunsRepository();
+        var titles = new Mock<IMediaTitlesRepository>();
+        titles.Setup(repository => repository.UpsertAsync(It.IsAny<MediaTitleUpsert>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaTitle(5, 1, "tt14452776", "Bob's Burgers", 2022, DateTime.UtcNow, DateTime.UtcNow, 42, true));
+        var files = new Mock<IMediaFilesRepository>();
+        files.Setup(repository => repository.GetByCurrentPathAsync(It.IsAny<string>(), true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MediaFile?)null);
+        files.Setup(repository => repository.UpsertAsync(It.IsAny<MediaFileUpsert>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("file persistence failed"));
+        var fileResults = new Mock<INormalizationFileResultsRepository>();
+        var deletedDirectories = new Mock<INormalizationDeletedDirectoriesRepository>();
+        var imdbClient = CreateBobBurgersClient();
+        var handler = new MediaTypeManager(
+            fileManager.Object,
+            imdbClient.Object,
+            null,
+            titles.Object,
+            files.Object,
+            fileResults.Object,
+            deletedDirectories.Object,
+            runs.Object);
+        var service = new NormalizationService(
+            CreateLibraryRequest(libraryRoot, outputRoot),
+            handler,
+            runs.Object);
+
+        var result = await service.NormalizeMediaFiles();
+
+        Assert.Equal(1, result.Renamed.Count);
+        runs.Verify(repository => repository.UpsertAsync(
+            It.Is<NormalizationRunUpsert>(request =>
+                request.Id == 42
+                && request.Status == "Failed"
+                && request.ErrorMessage == "file persistence failed"),
+            It.IsAny<CancellationToken>()), Times.Once);
+        runs.Verify(repository => repository.UpsertAsync(
+            It.Is<NormalizationRunUpsert>(request =>
+                request.Id == 42
+                && request.Status == "Completed"),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -179,12 +239,15 @@ public sealed class NormalizationServiceTests
 
         var service = new NormalizationService(
             CreateLibraryRequest(libraryRoot, outputRoot),
-            new MediaTypeHandler(fileManager.Object, imdbClient.Object),
-            runs.Object,
-            titles.Object,
-            files.Object,
-            fileResults.Object,
-            deletedDirectories.Object);
+            new MediaTypeManager(
+                fileManager.Object,
+                imdbClient.Object,
+                null,
+                titles.Object,
+                files.Object,
+                fileResults.Object,
+                deletedDirectories.Object),
+            runs.Object);
 
         var result = await service.NormalizeMediaFiles();
 
@@ -210,12 +273,8 @@ public sealed class NormalizationServiceTests
             new MediaLibraryNormalizationRequest(
                 [libraryRoot],
                 [new MediaTypeNormalizationRequest(MediaType.Tv, "TV", "TV", Path.Combine(Path.GetTempPath(), "TV"), true)]),
-            new MediaTypeHandler(fileManager.Object, new Mock<IImdbClient>().Object),
-            runs.Object,
-            new Mock<IMediaTitlesRepository>().Object,
-            new Mock<IMediaFilesRepository>().Object,
-            new Mock<INormalizationFileResultsRepository>().Object,
-            new Mock<INormalizationDeletedDirectoriesRepository>().Object);
+            new MediaTypeManager(fileManager.Object, new Mock<IImdbClient>().Object),
+            runs.Object);
 
         var result = await service.NormalizeMediaFiles();
 
@@ -239,12 +298,15 @@ public sealed class NormalizationServiceTests
             new MediaLibraryNormalizationRequest(
                 [],
                 [new MediaTypeNormalizationRequest(MediaType.Tv, "TV", "TV", "z:\\tv", false)]),
-            new MediaTypeHandler(fileManager.Object, new Mock<IImdbClient>().Object),
-            runs.Object,
-            titles.Object,
-            files.Object,
-            new Mock<INormalizationFileResultsRepository>().Object,
-            new Mock<INormalizationDeletedDirectoriesRepository>().Object);
+            new MediaTypeManager(
+                fileManager.Object,
+                new Mock<IImdbClient>().Object,
+                null,
+                titles.Object,
+                files.Object,
+                new Mock<INormalizationFileResultsRepository>().Object,
+                new Mock<INormalizationDeletedDirectoriesRepository>().Object),
+            runs.Object);
 
         await service.NormalizeMediaFiles();
 
@@ -263,12 +325,16 @@ public sealed class NormalizationServiceTests
             new MediaLibraryNormalizationRequest(
                 ["z:\\intake"],
                 [new MediaTypeNormalizationRequest(MediaType.Tv, "TV", "TV", "z:\\tv", true)]),
-            new MediaTypeHandler(fileManager.Object, new Mock<IImdbClient>().Object),
-            runs.Object,
-            new Mock<IMediaTitlesRepository>().Object,
-            new Mock<IMediaFilesRepository>().Object,
-            new Mock<INormalizationFileResultsRepository>().Object,
-            new Mock<INormalizationDeletedDirectoriesRepository>().Object);
+            new MediaTypeManager(
+                fileManager.Object,
+                new Mock<IImdbClient>().Object,
+                null,
+                null,
+                null,
+                null,
+                null,
+                runs.Object),
+            runs.Object);
 
         await Assert.ThrowsAsync<DirectoryNotFoundException>(() => service.NormalizeMediaFiles());
 
@@ -283,7 +349,7 @@ public sealed class NormalizationServiceTests
         fileManager
             .Setup(manager => manager.FindMediaFiles(libraryRoot))
             .Returns([]);
-        var mediaTypeHandler = new MediaTypeHandler(
+        var mediaTypeManager = new MediaTypeManager(
             fileManager.Object,
             new Mock<IImdbClient>().Object);
         var service = new NormalizationService(
@@ -295,7 +361,7 @@ public sealed class NormalizationServiceTests
                     "TV",
                     Path.Combine(Path.GetTempPath(), "FormattedTV"),
                     enabled: true)]),
-            mediaTypeHandler);
+            mediaTypeManager);
 
         var result = await service.NormalizeMediaFiles();
 
@@ -349,7 +415,7 @@ public sealed class NormalizationServiceTests
                     "TV",
                     outputRoot,
                     enabled: true)]),
-            new MediaTypeHandler(fileManager.Object, imdbClient.Object));
+            new MediaTypeManager(fileManager.Object, imdbClient.Object));
 
         var result = await service.NormalizeMediaFiles();
 

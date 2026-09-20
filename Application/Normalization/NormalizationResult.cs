@@ -70,7 +70,8 @@ public sealed class MediaTypeNormalizationResult
         IEnumerable<string> deletedDirectories,
         IEnumerable<long>? observedFileIds = null,
         IEnumerable<long>? observedTitleIds = null,
-        bool processedSuccessfully = false)
+        bool processedSuccessfully = false,
+        Exception? persistenceFailure = null)
     {
         ArgumentNullException.ThrowIfNull(fileResults);
         ArgumentNullException.ThrowIfNull(deletedDirectories);
@@ -80,6 +81,7 @@ public sealed class MediaTypeNormalizationResult
         ObservedFileIds = (observedFileIds ?? []).Distinct().ToArray();
         ObservedTitleIds = (observedTitleIds ?? []).Distinct().ToArray();
         ProcessedSuccessfully = processedSuccessfully;
+        PersistenceFailure = persistenceFailure;
     }
 
     public static MediaTypeNormalizationResult Empty { get; } = new([], []);
@@ -93,6 +95,17 @@ public sealed class MediaTypeNormalizationResult
     public long[] ObservedTitleIds { get; }
 
     public bool ProcessedSuccessfully { get; }
+
+    public Exception? PersistenceFailure { get; }
+
+    public MediaTypeNormalizationResult WithPersistenceFailure(Exception exception) =>
+        new(
+            FileResults,
+            DeletedDirectories,
+            ObservedFileIds,
+            ObservedTitleIds,
+            ProcessedSuccessfully,
+            exception);
 }
 
 public sealed class NormalizationResult

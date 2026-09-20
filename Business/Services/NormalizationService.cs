@@ -1,7 +1,6 @@
 using Application.Abstractions.Database;
 using Application.Abstractions.Database.Models;
 using Application.Normalization;
-using Domain.Enums;
 using Microsoft.Extensions.Logging;
 
 namespace Business.Services;
@@ -9,31 +8,19 @@ namespace Business.Services;
 public sealed class NormalizationService : INormalizationService
 {
     private readonly MediaLibraryNormalizationRequest mediaLibrary;
-    private readonly MediaTypeHandler mediaTypeHandler;
+    private readonly MediaTypeManager mediaTypeManager;
     private readonly INormalizationRunsRepository? runsRepository;
-    private readonly IMediaTitlesRepository? titlesRepository;
-    private readonly IMediaFilesRepository? filesRepository;
-    private readonly INormalizationFileResultsRepository? fileResultsRepository;
-    private readonly INormalizationDeletedDirectoriesRepository? deletedDirectoriesRepository;
     private readonly ILogger<NormalizationService> logger;
 
     public NormalizationService(
         MediaLibraryNormalizationRequest mediaLibrary,
-        MediaTypeHandler mediaTypeHandler,
+        MediaTypeManager mediaTypeManager,
         INormalizationRunsRepository? runsRepository = null,
-        IMediaTitlesRepository? titlesRepository = null,
-        IMediaFilesRepository? filesRepository = null,
-        INormalizationFileResultsRepository? fileResultsRepository = null,
-        INormalizationDeletedDirectoriesRepository? deletedDirectoriesRepository = null,
         ILogger<NormalizationService>? logger = null)
     {
         this.mediaLibrary = mediaLibrary;
-        this.mediaTypeHandler = mediaTypeHandler;
+        this.mediaTypeManager = mediaTypeManager;
         this.runsRepository = runsRepository;
-        this.titlesRepository = titlesRepository;
-        this.filesRepository = filesRepository;
-        this.fileResultsRepository = fileResultsRepository;
-        this.deletedDirectoriesRepository = deletedDirectoriesRepository;
         this.logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<NormalizationService>.Instance;
     }
 
@@ -42,11 +29,6 @@ public sealed class NormalizationService : INormalizationService
         var fileResults = new List<MediaFileNormalizationResult>();
         var deletedDirectories = new List<string>();
         long? normalizationRunId = null;
-        var titleIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-        var seenTitleIds = new HashSet<long>();
-        var seenFileIds = new HashSet<long>();
-        var mediaProcessedSuccessfully = false;
-
         try
         {
             normalizationRunId = await TryStartRunAsync(cancellationToken);
@@ -66,13 +48,20 @@ public sealed class NormalizationService : INormalizationService
             MediaTypeNormalizationResult result;
             try
             {
-                result = await mediaTypeHandler.Process(mediaType, mediaLibrary.Locations, cancellationToken);
+                result = await mediaTypeManager.Process(
+                    mediaType,
+                    mediaLibrary.Locations,
+                    normalizationRunId,
+                    cancellationToken);
             }
             catch (OperationCanceledException)
             {
                 if (normalizationRunId.HasValue)
                 {
-                    await MarkRunFailedAsync(normalizationRunId.Value, new OperationCanceledException("Normalization was canceled."), CancellationToken.None);
+                    await mediaTypeManager.MarkRunFailedAsync(
+                        normalizationRunId.Value,
+                        new OperationCanceledException("Normalization was canceled."),
+                        CancellationToken.None);
                 }
 
                 throw;
@@ -81,7 +70,10 @@ public sealed class NormalizationService : INormalizationService
             {
                 if (normalizationRunId.HasValue)
                 {
-                    await MarkRunFailedAsync(normalizationRunId.Value, exception, CancellationToken.None);
+                    await mediaTypeManager.MarkRunFailedAsync(
+                        normalizationRunId.Value,
+                        exception,
+                        CancellationToken.None);
                 }
 
                 throw;
@@ -89,25 +81,14 @@ public sealed class NormalizationService : INormalizationService
 
             fileResults.AddRange(result.FileResults);
             deletedDirectories.AddRange(result.DeletedDirectories);
-            seenFileIds.UnionWith(result.ObservedFileIds);
-            seenTitleIds.UnionWith(result.ObservedTitleIds);
-            mediaProcessedSuccessfully |= result.ProcessedSuccessfully;
 
-            if (normalizationRunId.HasValue && mediaType.Id == MediaType.Tv)
+            if (normalizationRunId.HasValue && result.PersistenceFailure is not null)
             {
-                try
-                {
-                    await PersistTvResultAsync(normalizationRunId.Value, mediaType, result, titleIds, seenTitleIds, seenFileIds, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    await MarkRunFailedAsync(normalizationRunId.Value, exception, cancellationToken);
-                    normalizationRunId = null;
-                }
+                await mediaTypeManager.MarkRunFailedAsync(
+                    normalizationRunId.Value,
+                    result.PersistenceFailure,
+                    cancellationToken);
+                normalizationRunId = null;
             }
         }
 
@@ -116,10 +97,6 @@ public sealed class NormalizationService : INormalizationService
         {
             try
             {
-                if (mediaProcessedSuccessfully)
-                {
-                    await ReconcileTvRowsAsync(seenTitleIds, seenFileIds, cancellationToken);
-                }
                 await runsRepository!.UpsertAsync(
                     new NormalizationRunUpsert(normalizationRunId, DateTime.UtcNow, "Completed", null, null),
                     cancellationToken);
@@ -130,7 +107,10 @@ public sealed class NormalizationService : INormalizationService
             }
             catch (Exception exception)
             {
-                await MarkRunFailedAsync(normalizationRunId.Value, exception, cancellationToken);
+                await mediaTypeManager.MarkRunFailedAsync(
+                    normalizationRunId.Value,
+                    exception,
+                    cancellationToken);
             }
         }
 
@@ -150,115 +130,7 @@ public sealed class NormalizationService : INormalizationService
         return run.Id;
     }
 
-    private async Task PersistTvResultAsync(
-        long runId,
-        MediaTypeNormalizationRequest mediaType,
-        MediaTypeNormalizationResult result,
-        IDictionary<string, long> titleIds,
-        ISet<long> seenTitleIds,
-        ISet<long> seenFileIds,
-        CancellationToken cancellationToken)
-    {
-        foreach (var fileResult in result.FileResults)
-        {
-            long? titleId = null;
-            if (!string.IsNullOrWhiteSpace(fileResult.OmdbEntryId))
-            {
-                if (!titleIds.TryGetValue(fileResult.OmdbEntryId, out var persistedTitleId))
-                {
-                    var title = await titlesRepository!.UpsertAsync(
-                        new MediaTitleUpsert(null, (int)mediaType.Id, fileResult.OmdbEntryId, fileResult.TitleName, fileResult.ReleaseYear, runId, true),
-                        cancellationToken);
-                    persistedTitleId = title.Id;
-                    titleIds[fileResult.OmdbEntryId] = persistedTitleId;
-                }
-
-                titleId = persistedTitleId;
-                seenTitleIds.Add(persistedTitleId);
-            }
-
-            var currentPath = fileResult.Status is MediaFileNormalizationStatus.Renamed or MediaFileNormalizationStatus.AlreadyNormalized
-                ? fileResult.DestinationFilePath ?? fileResult.SourceFilePath
-                : fileResult.SourceFilePath;
-            var existingFile = await filesRepository!.GetByCurrentPathAsync(currentPath, true, cancellationToken);
-            var persistedFile = await filesRepository.UpsertAsync(
-                new MediaFileUpsert(
-                    existingFile?.Id,
-                    titleId,
-                    (int)mediaType.Id,
-                    currentPath,
-                    fileResult.DestinationFilePath,
-                    fileResult.SeasonNumber,
-                    fileResult.EpisodeNumber,
-                    fileResult.AirDate,
-                    fileResult.EpisodeTitle,
-                    fileResult.Status.ToString(),
-                    fileResult.Message,
-                    existingFile?.FirstSeenRunId ?? runId,
-                    runId,
-                    true),
-                cancellationToken);
-            seenFileIds.Add(persistedFile.Id);
-
-            await fileResultsRepository!.UpsertAsync(
-                new NormalizationFileResultUpsert(null, runId, persistedFile.Id, titleId, (int)mediaType.Id, fileResult.SourceFilePath, fileResult.DestinationFilePath, fileResult.Status.ToString(), fileResult.Message, fileResult.SourceRole),
-                cancellationToken);
-        }
-
-        foreach (var directory in result.DeletedDirectories)
-        {
-            await deletedDirectoriesRepository!.UpsertAsync(
-                new NormalizationDeletedDirectoryUpsert(null, runId, (int)mediaType.Id, directory),
-                cancellationToken);
-        }
-    }
-
-    private async Task ReconcileTvRowsAsync(
-        ISet<long> seenTitleIds,
-        ISet<long> seenFileIds,
-        CancellationToken cancellationToken)
-    {
-        if (!PersistenceAvailable)
-        {
-            return;
-        }
-
-        var tvTypeId = (int)MediaType.Tv;
-        foreach (var file in await filesRepository!.GetActiveByMediaTypeAsync(tvTypeId, cancellationToken))
-        {
-            if (!seenFileIds.Contains(file.Id))
-            {
-                await filesRepository.DeleteAsync(file.Id, cancellationToken);
-            }
-        }
-
-        foreach (var title in await titlesRepository!.GetActiveByMediaTypeAsync(tvTypeId, cancellationToken))
-        {
-            if (!seenTitleIds.Contains(title.Id))
-            {
-                await titlesRepository.DeleteAsync(title.Id, cancellationToken);
-            }
-        }
-    }
-
-    private async Task MarkRunFailedAsync(long runId, Exception exception, CancellationToken cancellationToken)
-    {
-        LogPersistenceFailure("persisting normalization data", exception);
-        try
-        {
-            await runsRepository!.UpsertAsync(
-                new NormalizationRunUpsert(runId, DateTime.UtcNow, "Failed", exception.Message, null),
-                cancellationToken);
-        }
-        catch (Exception statusException)
-        {
-            LogPersistenceFailure("marking the normalization run failed", statusException);
-        }
-    }
-
-    private bool PersistenceAvailable =>
-        runsRepository is not null && titlesRepository is not null && filesRepository is not null
-        && fileResultsRepository is not null && deletedDirectoriesRepository is not null;
+    private bool PersistenceAvailable => runsRepository is not null;
 
     private void LogPersistenceFailure(string operation, Exception exception) =>
         logger.LogError(exception, "Database persistence failed while {Operation}; filesystem results are retained.", operation);

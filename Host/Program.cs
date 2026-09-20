@@ -72,7 +72,7 @@ builder.Services.AddScoped<INormalizationFileResultsRepository, NormalizationFil
 builder.Services.AddScoped<INormalizationDeletedDirectoriesRepository, NormalizationDeletedDirectoriesRepository>();
 builder.Services.AddScoped<ITvNormalizationInventoryProvider, TvNormalizationInventoryProvider>();
 builder.Services.AddSingleton<IFileManager, FileManager>();
-builder.Services.AddTransient<MediaTypeHandler>();
+builder.Services.AddTransient<MediaTypeManager>();
 builder.Services.AddTransient<INormalizationService, NormalizationService>();
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();

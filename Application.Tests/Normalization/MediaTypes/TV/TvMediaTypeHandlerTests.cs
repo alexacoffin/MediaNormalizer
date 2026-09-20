@@ -64,6 +64,7 @@ public sealed class TvMediaTypeHandlerTests
 
         var result = await handler.Normalize();
 
+        Assert.IsAssignableFrom<MediaTypeHandlerBase>(handler);
         var fileResult = Assert.Single(result.FileResults);
         Assert.True(result.ProcessedSuccessfully);
         Assert.Equal(MediaFileNormalizationStatus.AlreadyNormalized, fileResult.Status);
